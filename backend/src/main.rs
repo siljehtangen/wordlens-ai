@@ -5,20 +5,26 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Json as JsonResponse,
     },
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
+use tracing::{error, info, warn};
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const MAX_WORD_LEN: usize = 200;
+const VALID_LENSES: &[&str] = &["simple", "learning", "game", "cyberpunk", "poetic"];
 
 // ── Shared app state ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct AppState {
     http: reqwest::Client,
+    ollama_url: String,
 }
 
 // ── Request / Response types ────────────────────────────────────────────────
@@ -46,6 +52,28 @@ struct ErrorResponse {
 
 mod prompts;
 
+// ── Validation ───────────────────────────────────────────────────────────────
+
+fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
+    let word = payload.word.trim();
+    if word.is_empty() {
+        return Err("Word cannot be empty.".to_string());
+    }
+    if word.len() > MAX_WORD_LEN {
+        return Err(format!(
+            "Word is too long (max {MAX_WORD_LEN} characters)."
+        ));
+    }
+    if !VALID_LENSES.contains(&payload.lens.as_str()) {
+        return Err(format!(
+            "Unknown lens '{}'. Valid options: {}.",
+            payload.lens,
+            VALID_LENSES.join(", ")
+        ));
+    }
+    Ok(())
+}
+
 // ── Prompt builder ───────────────────────────────────────────────────────────
 
 fn build_prompt(word: &str, lens: &str) -> String {
@@ -63,12 +91,32 @@ fn build_prompt(word: &str, lens: &str) -> String {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+async fn health() -> impl IntoResponse {
+    JsonResponse(serde_json::json!({ "status": "ok" }))
+}
+
 /// Single handler that returns either streaming SSE or a JSON blob,
 /// depending on `payload.stream`.
 async fn explain(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ExplainRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_request(&payload) {
+        warn!(word = %payload.word, lens = %payload.lens, error = %e, "invalid request");
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            JsonResponse(ErrorResponse { error: e }),
+        )
+            .into_response();
+    }
+
+    info!(
+        word = %payload.word.trim(),
+        lens = %payload.lens,
+        stream = payload.stream,
+        "explain request"
+    );
+
     if payload.stream {
         explain_stream(state, payload).await.into_response()
     } else {
@@ -97,18 +145,20 @@ async fn explain_json(
 
     let resp = state
         .http
-        .post("http://127.0.0.1:11434/api/generate")
+        .post(format!("{}/api/generate", state.ollama_url))
         .json(&body)
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| {
+            error!(error = %e, "cannot reach Ollama (json path)");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 JsonResponse(ErrorResponse {
                     error: format!(
-                        "Cannot reach Ollama at localhost:11434. \
-                         Make sure Ollama is running with `ollama serve`. Error: {e}"
+                        "Cannot reach Ollama at {}. \
+                         Make sure Ollama is running with `ollama serve`. Error: {e}",
+                        state.ollama_url
                     ),
                 }),
             )
@@ -124,6 +174,7 @@ async fn explain_json(
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| {
+        error!(error = %e, "failed to parse Ollama response");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             JsonResponse(ErrorResponse {
@@ -149,7 +200,10 @@ async fn explain_json(
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
-) -> Result<Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>, (StatusCode, JsonResponse<ErrorResponse>)> {
+) -> Result<
+    Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
+    (StatusCode, JsonResponse<ErrorResponse>),
+> {
     let prompt = build_prompt(&payload.word, &payload.lens);
 
     let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
@@ -166,12 +220,13 @@ async fn explain_stream(
 
     let resp = state
         .http
-        .post("http://127.0.0.1:11434/api/generate")
+        .post(format!("{}/api/generate", state.ollama_url))
         .json(&body)
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| {
+            error!(error = %e, "cannot reach Ollama (stream path)");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 JsonResponse(ErrorResponse {
@@ -186,12 +241,16 @@ async fn explain_stream(
 
     let event_stream = byte_stream
         .map(|chunk| {
-            let chunk = chunk.map_err(|_| ())?;
+            let chunk = chunk.map_err(|e| {
+                error!(error = %e, "error reading Ollama stream chunk");
+            })?;
             let line = std::str::from_utf8(&chunk).unwrap_or("").trim().to_string();
             if line.is_empty() {
                 return Err(());
             }
-            let json: serde_json::Value = serde_json::from_str(&line).map_err(|_| ())?;
+            let json: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
+                error!(error = %e, raw = %line, "failed to parse Ollama stream chunk");
+            })?;
             let token = json["response"].as_str().unwrap_or("").to_string();
             let done = json["done"].as_bool().unwrap_or(false);
             Ok((token, done))
@@ -222,11 +281,17 @@ async fn main() {
         )
         .init();
 
+    let ollama_url = std::env::var("OLLAMA_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    info!("Using Ollama at {ollama_url}");
+
     let state = Arc::new(AppState {
         http: reqwest::Client::builder()
             .pool_max_idle_per_host(4)
             .build()
             .expect("Failed to build HTTP client"),
+        ollama_url,
     });
 
     let cors = CorsLayer::new()
@@ -235,12 +300,20 @@ async fn main() {
         .allow_headers(Any);
 
     let app = Router::new()
+        .route("/health", get(health))
         .route("/api/explain", post(explain))
         .with_state(state)
         .layer(cors);
 
-    let addr = "0.0.0.0:3001";
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let addr =
+        std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
+
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| {
+        eprintln!("ERROR: Failed to bind to {addr}: {e}");
+        eprintln!("       Is another process already using that port?");
+        std::process::exit(1);
+    });
+
     info!("WordLens backend listening on http://{addr}");
     axum::serve(listener, app).await.unwrap();
 }
