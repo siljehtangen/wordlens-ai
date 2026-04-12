@@ -12,6 +12,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info, warn};
 
 const MAX_WORD_LEN: usize = 200;
@@ -275,11 +276,19 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    let frontend_dist = std::env::var("FRONTEND_DIST")
+        .unwrap_or_else(|_| "../frontend/dist".to_string());
+    info!("Serving frontend from {frontend_dist}");
+
+    let serve_dir = ServeDir::new(&frontend_dist)
+        .not_found_service(ServeFile::new(format!("{frontend_dist}/index.html")));
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/explain", post(explain))
         .with_state(state)
-        .layer(cors);
+        .layer(cors)
+        .fallback_service(serve_dir);
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
 
