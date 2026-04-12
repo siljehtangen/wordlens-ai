@@ -22,37 +22,67 @@ export interface Message {
 // ── Lens catalogue ────────────────────────────────────────────────────────────
 
 const LENSES: { id: Lens; label: string; emoji: string; tagline: string }[] = [
-  {
-    id: "simple",
-    label: "Simple",
-    emoji: "📚",
-    tagline: "Clear & easy",
-  },
-  {
-    id: "learning",
-    label: "Learning",
-    emoji: "🧠",
-    tagline: "Deep & structured",
-  },
-  {
-    id: "game",
-    label: "Game",
-    emoji: "🎮",
-    tagline: "Interactive & fun",
-  },
-  {
-    id: "cyberpunk",
-    label: "Cyberpunk",
-    emoji: "🏙️",
-    tagline: "Futuristic & dark",
-  },
-  {
-    id: "poetic",
-    label: "Poetic",
-    emoji: "📖",
-    tagline: "Metaphorical & beautiful",
-  },
+  { id: "simple",    label: "Simple",    emoji: "📚", tagline: "Clear & easy" },
+  { id: "learning",  label: "Learning",  emoji: "🧠", tagline: "Deep & structured" },
+  { id: "game",      label: "Game",      emoji: "🎮", tagline: "Interactive & fun" },
+  { id: "cyberpunk", label: "Cyberpunk", emoji: "🏙️", tagline: "Futuristic & dark" },
+  { id: "poetic",    label: "Poetic",    emoji: "📖", tagline: "Metaphorical & beautiful" },
 ];
+
+// ── Lucide-style inline SVG icons ─────────────────────────────────────────────
+
+const IconEye = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+
+const IconSend = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2.5"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m22 2-7 20-4-9-9-4Z"/>
+    <path d="M22 2 11 13"/>
+  </svg>
+);
+
+const IconRefreshCw = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+    <path d="M8 16H3v5"/>
+  </svg>
+);
+
+const IconTrash2 = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 6h18"/>
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+    <line x1="10" x2="10" y1="11" y2="17"/>
+    <line x1="14" x2="14" y1="11" y2="17"/>
+  </svg>
+);
+
+const IconSparkles = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="1.5"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+    <path d="M5 3v4"/>
+    <path d="M3 5h4"/>
+    <path d="M19 17v4"/>
+    <path d="M17 19h4"/>
+  </svg>
+);
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -68,16 +98,14 @@ export default component$(() => {
     streamingId: null,
   });
 
-  // Auto-scroll whenever the message list grows or streaming content changes.
+  // Auto-scroll whenever message list grows or streaming content changes
   useVisibleTask$(({ track }) => {
     track(() => messages.list.length);
-    track(() =>
-      messages.list.find((m) => m.streaming)?.content
-    );
+    track(() => messages.list.find((m) => m.streaming)?.content);
     messagesEnd.value?.scrollIntoView({ behavior: "smooth", block: "end" });
   });
 
-  // ── Send message ─────────────────────────────────────────────────────────
+  // ── Send message ──────────────────────────────────────────────────────────
 
   const sendMessage = $(async () => {
     const word = input.value.trim();
@@ -107,7 +135,6 @@ export default component$(() => {
         return;
       }
 
-      // Add a streaming placeholder — hide the typing dots immediately.
       messages.list.push({ id: replyId, role: "assistant", content: "", lens: activeLens.value, streaming: true });
       messages.streamingId = replyId;
       loading.value = false;
@@ -122,7 +149,6 @@ export default component$(() => {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE events are separated by \n\n
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
 
@@ -140,7 +166,7 @@ export default component$(() => {
           }
         }
       }
-    } catch (err) {
+    } catch {
       messages.list.push({
         id: replyId,
         role: "assistant",
@@ -158,14 +184,10 @@ export default component$(() => {
   // ── Regenerate last response ──────────────────────────────────────────────
 
   const regenerate = $(async () => {
-    // Find the last user message and resend it.
     const lastUser = [...messages.list].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
-
-    // Remove everything after (and including) the last assistant reply.
     const lastUserIdx = messages.list.lastIndexOf(lastUser);
     messages.list.splice(lastUserIdx + 1);
-
     input.value = lastUser.content;
     await sendMessage();
   });
@@ -173,103 +195,127 @@ export default component$(() => {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const lensInfo = (id?: Lens) => LENSES.find((l) => l.id === id);
+  const hasResponses = () => messages.list.some((m) => m.role === "assistant");
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div class={["app", `lens-${activeLens.value}`]}>
-      {/* ── Header ─────────────────────────────────────── */}
-      <header class="header">
-        <div class="header-inner">
-          <div class="logo">
-            <span class="logo-icon" aria-hidden>🔍</span>
-            <span class="logo-text">WordLens AI</span>
-          </div>
-          <p class="tagline">
+    <div class={["app flex flex-col h-dvh w-full max-w-2xl", `lens-${activeLens.value}`]}>
+
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header class="flex items-center gap-3 px-5 py-3 border-b border-[var(--bot-border)] bg-[var(--bg-secondary)] shrink-0">
+        <div class="w-9 h-9 rounded-xl bg-[var(--accent)] flex items-center justify-center text-white shrink-0 shadow-sm">
+          <IconEye />
+        </div>
+        <div>
+          <h1 class="text-[1rem] font-bold tracking-tight leading-none text-[var(--accent)]">
+            WordLens
+          </h1>
+          <p class="text-[0.7rem] text-[var(--text-secondary)] mt-0.5 leading-none">
             Understand anything through multiple perspectives
           </p>
         </div>
       </header>
 
-      {/* ── Lens selector ──────────────────────────────── */}
-      <nav class="lens-bar" aria-label="Select lens">
+      {/* ── Lens selector ──────────────────────────────────────────────── */}
+      <nav
+        class="flex gap-1.5 px-4 py-2.5 bg-[var(--bg-secondary)] border-b border-[var(--bot-border)] overflow-x-auto scrollbar-hide shrink-0"
+        aria-label="Select lens"
+      >
         {LENSES.map((lens) => (
           <button
             key={lens.id}
-            class={["lens-btn", activeLens.value === lens.id ? "active" : ""]}
-            onClick$={() => {
-              activeLens.value = lens.id;
-            }}
+            class={[
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-all duration-200",
+              activeLens.value === lens.id
+                ? "bg-[var(--accent)] text-white border-transparent shadow-sm scale-[1.02]"
+                : "text-[var(--text-secondary)] border-[var(--bot-border)] hover:bg-[var(--accent-light)] hover:text-[var(--text-primary)] hover:border-transparent hover:-translate-y-px",
+            ]}
+            onClick$={() => { activeLens.value = lens.id; }}
             aria-pressed={activeLens.value === lens.id}
             title={lens.tagline}
           >
-            <span class="lens-emoji" aria-hidden>
-              {lens.emoji}
-            </span>
-            <span class="lens-label">{lens.label}</span>
-            <span class="lens-tagline">{lens.tagline}</span>
+            <span aria-hidden="true">{lens.emoji}</span>
+            <span class="hidden sm:inline">{lens.label}</span>
+            <span class="hidden lg:inline opacity-60 font-normal">— {lens.tagline}</span>
           </button>
         ))}
       </nav>
 
-      {/* ── Chat area ──────────────────────────────────── */}
-      <main class="chat-area" ref={chatArea}>
+      {/* ── Chat area ──────────────────────────────────────────────────── */}
+      <main
+        class="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3 chat-scrollbar chat-inner"
+        ref={chatArea}
+      >
+
+        {/* Empty state */}
         {messages.list.length === 0 && (
-          <div class="empty-state">
-            <div class="empty-icon">✨</div>
-            <p class="empty-title">Enter any word, concept, or idea</p>
-            <p class="empty-examples">
-              Try:{" "}
-              {["entropy", "democracy", "recursion", "love", "gravity"].map(
-                (ex, i) => (
-                  <>
-                    {i > 0 && ", "}
-                    <button
-                      key={ex}
-                      class="example-chip"
-                      onClick$={() => {
-                        input.value = ex;
-                      }}
-                    >
-                      {ex}
-                    </button>
-                  </>
-                )
-              )}
-            </p>
+          <div class="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+            <div class="text-[var(--accent)] pulse-icon opacity-90">
+              <IconSparkles />
+            </div>
+            <div class="space-y-1">
+              <p class="font-semibold text-[var(--text-primary)] text-[0.95rem]">
+                Enter any word, concept, or idea
+              </p>
+              <p class="text-xs text-[var(--text-muted)]">
+                Pick a lens above to shape how it's explained
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 justify-center mt-1">
+              {["entropy", "democracy", "recursion", "love", "gravity"].map((ex) => (
+                <button
+                  key={ex}
+                  class="px-3 py-1.5 rounded-full bg-[var(--accent-light)] text-[var(--accent-bright)] text-xs font-medium border border-[var(--bot-border)] hover:bg-[var(--accent)] hover:text-white hover:border-transparent hover:-translate-y-px transition-all duration-200 italic"
+                  onClick$={() => { input.value = ex; }}
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
+        {/* Messages */}
         {messages.list.map((msg) => {
           const info = lensInfo(msg.lens);
           return (
             <div
               key={msg.id}
               class={[
-                "message",
-                `message-${msg.role}`,
-                msg.lens ? `msg-lens-${msg.lens}` : "",
-                msg.streaming ? "streaming" : "",
+                "flex flex-col max-w-[82%] msg-in",
+                msg.role === "user" ? "self-end items-end" : "self-start items-start",
               ]}
             >
+              {/* Lens badge on assistant messages */}
               {msg.role === "assistant" && info && (
-                <div class="msg-lens-badge">
-                  <span aria-hidden>{info.emoji}</span> {info.label}
+                <div class="flex items-center gap-1 mb-1 px-1">
+                  <span class="text-[0.65rem] font-bold uppercase tracking-widest text-[var(--badge-text)]">
+                    <span aria-hidden="true">{info.emoji}</span> {info.label}
+                  </span>
                 </div>
               )}
-              <div class="msg-content">{msg.content}</div>
-              {msg.streaming && (
-                <span class="cursor" aria-hidden>
-                  ▌
-                </span>
-              )}
+
+              {/* Bubble */}
+              <div
+                class={[
+                  "px-4 py-2.5 leading-relaxed text-[0.91rem] break-words whitespace-pre-wrap",
+                  msg.role === "user"
+                    ? "bg-[var(--user-bg)] text-[var(--user-text)] rounded-2xl rounded-br-sm shadow-sm"
+                    : "bg-[var(--bot-bg)] text-[var(--bot-text)] border border-[var(--bot-border)] rounded-2xl rounded-tl-sm",
+                ]}
+              >
+                {msg.content}
+                {msg.streaming && <span class="cursor ml-0.5" aria-hidden="true">▌</span>}
+              </div>
             </div>
           );
         })}
 
+        {/* Typing indicator */}
         {loading.value && (
-          <div class="message message-assistant loading-msg">
-            <div class="typing-dots">
+          <div class="self-start msg-in">
+            <div class="typing-dots flex gap-1.5 px-4 py-3 bg-[var(--bot-bg)] border border-[var(--bot-border)] rounded-2xl rounded-tl-sm">
               <span />
               <span />
               <span />
@@ -277,65 +323,63 @@ export default component$(() => {
           </div>
         )}
 
-        <div ref={messagesEnd} class="scroll-anchor" />
+        <div ref={messagesEnd} class="h-px shrink-0" />
       </main>
 
-      {/* ── Input bar ──────────────────────────────────── */}
-      <footer class="input-bar">
-        <div class="input-inner">
-          <div class="active-lens-chip">
-            <span aria-hidden>{lensInfo(activeLens.value)?.emoji}</span>
-            {lensInfo(activeLens.value)?.label}
+      {/* ── Input bar ──────────────────────────────────────────────────── */}
+      <footer class="px-4 pb-5 pt-3 bg-[var(--bg-secondary)] border-t border-[var(--bot-border)] shrink-0 flex flex-col gap-2">
+
+        {/* Input row */}
+        <div class="flex items-center gap-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-2xl pl-3 pr-1.5 py-1.5 transition-colors duration-200 input-ring">
+
+          {/* Active lens chip */}
+          <div class="flex items-center gap-1 text-[0.68rem] font-bold text-[var(--badge-text)] bg-[var(--badge-bg)] rounded-full px-2 py-0.5 shrink-0 select-none">
+            <span aria-hidden="true">{lensInfo(activeLens.value)?.emoji}</span>
+            <span class="hidden sm:inline">{lensInfo(activeLens.value)?.label}</span>
           </div>
+
           <input
-            class="chat-input"
+            class="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] text-[0.9rem] placeholder:text-[var(--text-muted)] min-w-0 py-0.5"
             type="text"
             placeholder="Enter a word or concept…"
             value={input.value}
-            onInput$={(e) => {
-              input.value = (e.target as HTMLInputElement).value;
-            }}
-            onKeyDown$={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) sendMessage();
-            }}
+            onInput$={(e) => { input.value = (e.target as HTMLInputElement).value; }}
+            onKeyDown$={(e) => { if (e.key === "Enter" && !e.shiftKey) sendMessage(); }}
             disabled={loading.value}
             aria-label="Word or concept input"
           />
+
+          {/* Send button */}
           <button
-            class="send-btn"
+            class="w-9 h-9 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center shrink-0 transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
             onClick$={sendMessage}
             disabled={loading.value || !input.value.trim()}
             aria-label="Send"
           >
-            {loading.value ? (
-              <span class="spinner" aria-hidden />
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-                aria-hidden
-              >
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            )}
+            {loading.value
+              ? <span class="spinner" aria-hidden="true" />
+              : <IconSend />
+            }
           </button>
         </div>
 
-        {messages.list.some((m) => m.role === "assistant") && (
-          <div class="input-actions">
-            <button class="action-btn" onClick$={regenerate} disabled={loading.value}>
-              ↺ Regenerate
+        {/* Secondary actions */}
+        {hasResponses() && (
+          <div class="flex gap-2 justify-end">
+            <button
+              class="flex items-center gap-1.5 text-[0.72rem] font-medium text-[var(--text-secondary)] hover:text-[var(--accent-bright)] px-3 py-1.5 rounded-full border border-[var(--bot-border)] hover:bg-[var(--accent-light)] hover:border-transparent transition-all duration-200 disabled:opacity-40"
+              onClick$={regenerate}
+              disabled={loading.value}
+            >
+              <IconRefreshCw />
+              Regenerate
             </button>
             <button
-              class="action-btn"
-              onClick$={() => {
-                messages.list.splice(0, messages.list.length);
-              }}
+              class="flex items-center gap-1.5 text-[0.72rem] font-medium text-[var(--text-secondary)] hover:text-red-400 px-3 py-1.5 rounded-full border border-[var(--bot-border)] hover:bg-red-500/10 hover:border-red-500/20 transition-all duration-200"
+              onClick$={() => { messages.list.splice(0, messages.list.length); }}
             >
-              ✕ Clear
+              <IconTrash2 />
+              Clear
             </button>
           </div>
         )}
@@ -351,8 +395,7 @@ export const head: DocumentHead = {
   meta: [
     {
       name: "description",
-      content:
-        "Understand any word, concept, or idea through multiple AI-powered perspectives.",
+      content: "Understand any word, concept, or idea through multiple AI-powered perspectives.",
     },
     { property: "og:title", content: "WordLens AI" },
     {
