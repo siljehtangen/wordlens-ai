@@ -1,0 +1,25 @@
+# Rust
+/backend/target/
+/backend/Cargo.lock
+
+# Node / Qwik
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.qwik/
+/frontend/server/
+/frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
