@@ -44,37 +44,21 @@ struct ErrorResponse {
     error: String,
 }
 
+mod prompts;
+
 // ── Prompt builder ───────────────────────────────────────────────────────────
 
 fn build_prompt(word: &str, lens: &str) -> String {
     let word = word.trim();
-    match lens {
-        "simple" => format!(
-            "Explain '{word}' in simple, clear, friendly terms that anyone can understand. \
-             Use 2-3 sentences. No jargon, no bullet points — just plain prose."
-        ),
-        "learning" => format!(
-            "Give a structured educational explanation of '{word}'. \
-             Cover: what it is, why it matters, a concrete real-world example, and one surprising fact. \
-             Use clear paragraphs with a logical flow."
-        ),
-        "game" => format!(
-            "Explain '{word}' as if it is a mechanic or core system in a video game world. \
-             Use game-design vocabulary — stats, abilities, spawn rates, power-ups, whatever fits. \
-             Make it sound exciting, interactive, and playable!"
-        ),
-        "cyberpunk" => format!(
-            "Explain '{word}' through a cyberpunk lens: neon-lit megacities, neural implants, \
-             rogue AI, corporate dystopia, and hacker culture. \
-             Use evocative, atmospheric tech-noir language. Keep it sharp and electric."
-        ),
-        "poetic" => format!(
-            "Explain '{word}' in a poetic, metaphorical way. \
-             Use vivid imagery, sensory detail, and emotional resonance. \
-             Write it as flowing prose poetry — let it breathe and sing."
-        ),
-        _ => format!("Explain '{word}' clearly and concisely."),
-    }
+    let template = match lens {
+        "simple"    => prompts::PROMPT_SIMPLE,
+        "learning"  => prompts::PROMPT_LEARNING,
+        "game"      => prompts::PROMPT_GAME,
+        "cyberpunk" => prompts::PROMPT_CYBERPUNK,
+        "poetic"    => prompts::PROMPT_POETIC,
+        _           => "Explain '{word}' clearly and concisely.",
+    };
+    template.replace("{word}", word)
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
