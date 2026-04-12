@@ -1,5 +1,5 @@
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -10,8 +10,16 @@ use axum::{
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
+
+// ── Shared app state ─────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct AppState {
+    http: reqwest::Client,
+}
 
 // ── Request / Response types ────────────────────────────────────────────────
 
@@ -73,31 +81,41 @@ fn build_prompt(word: &str, lens: &str) -> String {
 
 /// Single handler that returns either streaming SSE or a JSON blob,
 /// depending on `payload.stream`.
-async fn explain(Json(payload): Json<ExplainRequest>) -> impl IntoResponse {
+async fn explain(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ExplainRequest>,
+) -> impl IntoResponse {
     if payload.stream {
-        explain_stream(payload).await.into_response()
+        explain_stream(state, payload).await.into_response()
     } else {
-        explain_json(payload).await.into_response()
+        explain_json(state, payload).await.into_response()
     }
 }
 
 /// Non-streaming path — waits for the full Ollama response.
 async fn explain_json(
+    state: Arc<AppState>,
     payload: ExplainRequest,
 ) -> Result<JsonResponse<ExplainResponse>, (StatusCode, JsonResponse<ErrorResponse>)> {
     let prompt = build_prompt(&payload.word, &payload.lens);
 
-    let client = reqwest::Client::new();
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
     let body = serde_json::json!({
-        "model": "llama3",
+        "model": model,
         "prompt": prompt,
-        "stream": false
+        "stream": false,
+        "options": {
+            "num_predict": 200,
+            "num_ctx": 1024,
+            "temperature": 0.7
+        }
     });
 
-    let resp = client
+    let resp = state
+        .http
         .post("http://127.0.0.1:11434/api/generate")
         .json(&body)
-        .timeout(std::time::Duration::from_secs(180))
+        .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| {
@@ -145,21 +163,28 @@ async fn explain_json(
 
 /// Streaming path — forwards Ollama token-by-token over SSE.
 async fn explain_stream(
+    state: Arc<AppState>,
     payload: ExplainRequest,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>, (StatusCode, JsonResponse<ErrorResponse>)> {
     let prompt = build_prompt(&payload.word, &payload.lens);
 
-    let client = reqwest::Client::new();
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
     let body = serde_json::json!({
-        "model": "llama3",
+        "model": model,
         "prompt": prompt,
-        "stream": true
+        "stream": true,
+        "options": {
+            "num_predict": 200,
+            "num_ctx": 1024,
+            "temperature": 0.7
+        }
     });
 
-    let resp = client
+    let resp = state
+        .http
         .post("http://127.0.0.1:11434/api/generate")
         .json(&body)
-        .timeout(std::time::Duration::from_secs(180))
+        .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| {
@@ -213,6 +238,13 @@ async fn main() {
         )
         .init();
 
+    let state = Arc::new(AppState {
+        http: reqwest::Client::builder()
+            .pool_max_idle_per_host(4)
+            .build()
+            .expect("Failed to build HTTP client"),
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -220,6 +252,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/api/explain", post(explain))
+        .with_state(state)
         .layer(cors);
 
     let addr = "0.0.0.0:3001";

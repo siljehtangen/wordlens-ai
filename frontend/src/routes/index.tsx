@@ -4,8 +4,6 @@ import {
   useStore,
   $,
   useVisibleTask$,
-  noSerialize,
-  type NoSerialize,
 } from "@builder.io/qwik";
 import type { DocumentHead } from "@builder.io/qwik-city";
 
@@ -70,11 +68,6 @@ export default component$(() => {
     streamingId: null,
   });
 
-  // Keep an EventSource reference so we can close it on cleanup.
-  const evtSrcHolder = useStore<{ ref: NoSerialize<EventSource> | null }>({
-    ref: null,
-  });
-
   // Auto-scroll whenever the message list grows or streaming content changes.
   useVisibleTask$(({ track }) => {
     track(() => messages.list.length);
@@ -90,12 +83,6 @@ export default component$(() => {
     const word = input.value.trim();
     if (!word || loading.value) return;
 
-    // Close any previous stream.
-    if (evtSrcHolder.ref) {
-      evtSrcHolder.ref.close();
-      evtSrcHolder.ref = null;
-    }
-
     const baseId = crypto.randomUUID();
     messages.list.push({ id: `${baseId}-user`, role: "user", content: word });
     input.value = "";
@@ -104,15 +91,10 @@ export default component$(() => {
     const replyId = `${baseId}-reply`;
 
     try {
-      // Use the streaming endpoint for a token-by-token experience.
       const resp = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          word,
-          lens: activeLens.value,
-          stream: false, // switch to true when Ollama streaming is confirmed working
-        }),
+        body: JSON.stringify({ word, lens: activeLens.value, stream: true }),
       });
 
       if (!resp.ok) {
@@ -121,31 +103,54 @@ export default component$(() => {
           const err = await resp.json();
           msg = err.error ?? msg;
         } catch { /* ignore */ }
-        messages.list.push({
-          id: replyId,
-          role: "assistant",
-          content: msg,
-          lens: activeLens.value,
-        });
+        messages.list.push({ id: replyId, role: "assistant", content: msg, lens: activeLens.value });
         return;
       }
 
-      const data = await resp.json();
-      messages.list.push({
-        id: replyId,
-        role: "assistant",
-        content: data.explanation,
-        lens: activeLens.value,
-      });
+      // Add a streaming placeholder — hide the typing dots immediately.
+      messages.list.push({ id: replyId, role: "assistant", content: "", lens: activeLens.value, streaming: true });
+      messages.streamingId = replyId;
+      loading.value = false;
+
+      const reader = resp.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by \n\n
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          let eventType = "message";
+          let data = "";
+          for (const line of part.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            else if (line.startsWith("data: ")) data = line.slice(6);
+          }
+          if (eventType === "done") break outer;
+          if (data) {
+            const idx = messages.list.findIndex((m) => m.id === replyId);
+            if (idx !== -1) messages.list[idx].content += data;
+          }
+        }
+      }
     } catch (err) {
       messages.list.push({
         id: replyId,
         role: "assistant",
-        content:
-          "Could not reach the WordLens backend. Is `cargo run` running on port 8080?",
+        content: "Could not reach the WordLens backend. Is `cargo run` running on port 3001?",
         lens: activeLens.value,
       });
     } finally {
+      const idx = messages.list.findIndex((m) => m.id === replyId);
+      if (idx !== -1) messages.list[idx].streaming = false;
+      messages.streamingId = null;
       loading.value = false;
     }
   });
