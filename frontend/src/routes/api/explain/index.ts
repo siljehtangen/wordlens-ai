@@ -9,7 +9,7 @@ export const onPost: RequestHandler = async ({ request, send }) => {
   try {
     isStream = (JSON.parse(body) as { stream?: boolean }).stream === true;
   } catch {
-    // Not valid JSON or no stream field — treat as non-streaming.
+    // ignore
   }
 
   let resp: Response;
