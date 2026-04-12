@@ -1,9 +1,16 @@
 import type { RequestHandler } from "@builder.io/qwik-city";
 
-const BACKEND = "http://localhost:3001";
+const BACKEND = process.env["BACKEND_URL"] ?? "http://localhost:3001";
 
-export const onPost: RequestHandler = async ({ request, json, env }) => {
+export const onPost: RequestHandler = async ({ request, send }) => {
   const body = await request.text();
+
+  let isStream = false;
+  try {
+    isStream = (JSON.parse(body) as { stream?: boolean }).stream === true;
+  } catch {
+    // Not valid JSON or no stream field — treat as non-streaming.
+  }
 
   let resp: Response;
   try {
@@ -12,14 +19,37 @@ export const onPost: RequestHandler = async ({ request, json, env }) => {
       headers: { "Content-Type": "application/json" },
       body,
     });
-  } catch (err) {
-    json(503, {
-      error:
-        "Cannot reach the WordLens backend. Make sure `cargo run` is running on port 3001.",
-    });
+  } catch {
+    send(
+      new Response(
+        JSON.stringify({
+          error:
+            "Cannot reach the WordLens backend. Make sure `cargo run` is running on port 3001.",
+        }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     return;
   }
 
-  const data = await resp.json();
-  json(resp.status, data);
+  if (isStream) {
+    send(
+      new Response(resp.body, {
+        status: resp.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no",
+        },
+      }),
+    );
+  } else {
+    const data = await resp.json();
+    send(
+      new Response(JSON.stringify(data), {
+        status: resp.status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
 };
