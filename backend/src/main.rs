@@ -14,12 +14,8 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
 const MAX_WORD_LEN: usize = 200;
 const VALID_LENSES: &[&str] = &["simple", "learning", "game", "cyberpunk", "poetic"];
-
-// ── Shared app state ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct AppState {
@@ -27,13 +23,10 @@ struct AppState {
     ollama_url: String,
 }
 
-// ── Request / Response types ────────────────────────────────────────────────
-
 #[derive(Debug, Deserialize)]
 struct ExplainRequest {
     word: String,
     lens: String,
-    /// Set to true to receive a streaming SSE response instead of JSON.
     #[serde(default)]
     stream: bool,
 }
@@ -52,17 +45,13 @@ struct ErrorResponse {
 
 mod prompts;
 
-// ── Validation ───────────────────────────────────────────────────────────────
-
 fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
     let word = payload.word.trim();
     if word.is_empty() {
         return Err("Word cannot be empty.".to_string());
     }
     if word.len() > MAX_WORD_LEN {
-        return Err(format!(
-            "Word is too long (max {MAX_WORD_LEN} characters)."
-        ));
+        return Err(format!("Word is too long (max {MAX_WORD_LEN} characters)."));
     }
     if !VALID_LENSES.contains(&payload.lens.as_str()) {
         return Err(format!(
@@ -73,8 +62,6 @@ fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
     }
     Ok(())
 }
-
-// ── Prompt builder ───────────────────────────────────────────────────────────
 
 fn build_prompt(word: &str, lens: &str) -> String {
     let word = word.trim();
@@ -89,14 +76,10 @@ fn build_prompt(word: &str, lens: &str) -> String {
     template.replace("{word}", word)
 }
 
-// ── Handlers ─────────────────────────────────────────────────────────────────
-
 async fn health() -> impl IntoResponse {
     JsonResponse(serde_json::json!({ "status": "ok" }))
 }
 
-/// Single handler that returns either streaming SSE or a JSON blob,
-/// depending on `payload.stream`.
 async fn explain(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ExplainRequest>,
@@ -124,7 +107,6 @@ async fn explain(
     }
 }
 
-/// Non-streaming path — waits for the full Ollama response.
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -196,7 +178,6 @@ async fn explain_json(
     }))
 }
 
-/// Streaming path — forwards Ollama token-by-token over SSE.
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -235,11 +216,8 @@ async fn explain_stream(
             )
         })?;
 
-    // Ollama streams newline-delimited JSON objects.
-    // We re-emit each token as an SSE `data` event, and a final `done` event.
-    let byte_stream = resp.bytes_stream();
-
-    let event_stream = byte_stream
+    let event_stream = resp
+        .bytes_stream()
         .map(|chunk| {
             let chunk = chunk.map_err(|e| {
                 error!(error = %e, "error reading Ollama stream chunk");
@@ -269,8 +247,6 @@ async fn explain_stream(
 
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::default()))
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
@@ -305,8 +281,7 @@ async fn main() {
         .with_state(state)
         .layer(cors);
 
-    let addr =
-        std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
+    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| {
         eprintln!("ERROR: Failed to bind to {addr}: {e}");
