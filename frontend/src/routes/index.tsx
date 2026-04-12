@@ -4,6 +4,7 @@ import {
   useStore,
   $,
   useVisibleTask$,
+  type JSXOutput,
 } from "@builder.io/qwik";
 import type { DocumentHead } from "@builder.io/qwik-city";
 
@@ -21,12 +22,73 @@ export interface Message {
 
 // ── Lens catalogue ────────────────────────────────────────────────────────────
 
-const LENSES: { id: Lens; label: string; emoji: string; tagline: string }[] = [
-  { id: "simple",    label: "Simple",    emoji: "📚", tagline: "Clear & easy" },
-  { id: "learning",  label: "Learning",  emoji: "🧠", tagline: "Deep & structured" },
-  { id: "game",      label: "Game",      emoji: "🎮", tagline: "Interactive & fun" },
-  { id: "cyberpunk", label: "Cyberpunk", emoji: "🏙️", tagline: "Futuristic & dark" },
-  { id: "poetic",    label: "Poetic",    emoji: "📖", tagline: "Metaphorical & beautiful" },
+const IconBookOpen = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+);
+
+const IconBrain = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+    <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+  </svg>
+);
+
+const IconGamepad2 = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <line x1="6" x2="10" y1="12" y2="12"/>
+    <line x1="8" x2="8" y1="10" y2="14"/>
+    <line x1="15" x2="15.01" y1="13" y2="13"/>
+    <line x1="18" x2="18.01" y1="11" y2="11"/>
+    <rect width="20" height="12" x="2" y="6" rx="2"/>
+  </svg>
+);
+
+const IconCpu = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="16" rx="2"/>
+    <rect x="9" y="9" width="6" height="6"/>
+    <path d="M15 2v2"/><path d="M15 20v2"/>
+    <path d="M2 15h2"/><path d="M2 9h2"/>
+    <path d="M20 15h2"/><path d="M20 9h2"/>
+    <path d="M9 2v2"/><path d="M9 20v2"/>
+  </svg>
+);
+
+const IconFeather = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/>
+    <line x1="16" x2="2" y1="8" y2="22"/>
+    <line x1="17.5" x2="9" y1="15" y2="15"/>
+  </svg>
+);
+
+const LENS_ICONS: Record<Lens, () => JSXOutput> = {
+  simple:    IconBookOpen,
+  learning:  IconBrain,
+  game:      IconGamepad2,
+  cyberpunk: IconCpu,
+  poetic:    IconFeather,
+};
+
+const LENSES: { id: Lens; label: string; tagline: string }[] = [
+  { id: "simple",    label: "Simple",    tagline: "Clear & easy" },
+  { id: "learning",  label: "Learning",  tagline: "Deep & structured" },
+  { id: "game",      label: "Game",      tagline: "Interactive & fun" },
+  { id: "cyberpunk", label: "Cyberpunk", tagline: "Futuristic & dark" },
+  { id: "poetic",    label: "Poetic",    tagline: "Metaphorical & beautiful" },
 ];
 
 // ── Lucide-style inline SVG icons ─────────────────────────────────────────────
@@ -200,7 +262,7 @@ export default component$(() => {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div class={["app flex flex-col h-dvh w-full max-w-2xl", `lens-${activeLens.value}`]}>
+    <div class={["app flex flex-col h-dvh w-full", `lens-${activeLens.value}`]}>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header class="flex items-center gap-3 px-5 py-3 border-b border-[var(--bot-border)] bg-[var(--bg-secondary)] shrink-0">
@@ -235,7 +297,7 @@ export default component$(() => {
             aria-pressed={activeLens.value === lens.id}
             title={lens.tagline}
           >
-            <span aria-hidden="true">{lens.emoji}</span>
+            {(() => { const Icon = LENS_ICONS[lens.id]; return <Icon />; })()}
             <span class="hidden sm:inline">{lens.label}</span>
             <span class="hidden lg:inline opacity-60 font-normal">— {lens.tagline}</span>
           </button>
@@ -290,8 +352,9 @@ export default component$(() => {
               {/* Lens badge on assistant messages */}
               {msg.role === "assistant" && info && (
                 <div class="flex items-center gap-1 mb-1 px-1">
-                  <span class="text-[0.65rem] font-bold uppercase tracking-widest text-[var(--badge-text)]">
-                    <span aria-hidden="true">{info.emoji}</span> {info.label}
+                  <span class="flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-widest text-[var(--badge-text)]">
+                    {(() => { const Icon = LENS_ICONS[info.id]; return <Icon />; })()}
+                    {info.label}
                   </span>
                 </div>
               )}
@@ -333,10 +396,12 @@ export default component$(() => {
         <div class="flex items-center gap-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-2xl pl-3 pr-1.5 py-1.5 transition-colors duration-200 input-ring">
 
           {/* Active lens chip */}
-          <div class="flex items-center gap-1 text-[0.68rem] font-bold text-[var(--badge-text)] bg-[var(--badge-bg)] rounded-full px-2 py-0.5 shrink-0 select-none">
-            <span aria-hidden="true">{lensInfo(activeLens.value)?.emoji}</span>
-            <span class="hidden sm:inline">{lensInfo(activeLens.value)?.label}</span>
-          </div>
+          {(() => { const li = lensInfo(activeLens.value); return li ? (
+            <div class="flex items-center gap-1 text-[0.68rem] font-bold text-[var(--badge-text)] bg-[var(--badge-bg)] rounded-full px-2 py-0.5 shrink-0 select-none">
+              {(() => { const Icon = LENS_ICONS[li.id]; return <Icon />; })()}
+              <span class="hidden sm:inline">{li.label}</span>
+            </div>
+          ) : null; })()}
 
           <input
             class="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] text-[0.9rem] placeholder:text-[var(--text-muted)] min-w-0 py-0.5"
