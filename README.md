@@ -1,74 +1,75 @@
-# 🔍 WordLens AI
+# WordLens AI
 
 **Understand any word, concept, or idea through multiple AI-powered lenses.**
 
-WordLens AI is a multi-perspective language tool built with a Rust/Axum backend, Qwik frontend, and Llama 3 running locally via Ollama. Instead of giving you a single static definition, it explains the same concept in five completely different ways — each tailored to a different way of thinking.
+WordLens AI is a multi-perspective language tool built entirely in Rust — a Leptos/WASM frontend and an Axum backend — with Llama 3 running locally via Ollama. Instead of a single static definition, it explains the same concept in five completely different ways, each with its own visual identity.
 
 ---
 
-## 🧠 What it does
+## What it does
 
-Type a word like *entropy*, *democracy*, or *love* and WordLens returns an explanation shaped by whichever lens you've selected. Switch lenses instantly to see the same concept reframed — the UI adapts its entire colour identity to match.
+Type a word like *entropy*, *democracy*, or *love* and WordLens returns an explanation shaped by whichever lens you've selected. Switch lenses instantly to see the same concept reframed — the UI shifts its entire colour theme to match.
 
 ---
 
-## 🔍 Lenses
+## Lenses
 
 | Lens | Theme | Style |
 |------|-------|-------|
-| 📚 **Simple** | Soft blue | Clear, friendly, no jargon |
-| 🧠 **Learning** | Deep purple | Structured, educational, with examples |
-| 🎮 **Game** | Neon green | Reframed as a game mechanic or system |
-| 🏙️ **Cyberpunk** | Dark + neon pink/cyan | Tech-noir, futuristic, atmospheric |
-| 📖 **Poetic** | Warm amber/gold | Metaphorical, imagery-driven prose poetry |
+| **Simple** | Soft blue | Clear, friendly, no jargon |
+| **Learning** | Deep purple | Structured, educational, with examples |
+| **Game** | Neon green | Reframed as a game mechanic or system |
+| **Cyberpunk** | Dark + neon pink/cyan | Tech-noir, futuristic, atmospheric |
+| **Poetic** | Warm amber/gold | Metaphorical, imagery-driven prose poetry |
 
 ---
 
-## 🎨 Dynamic Colour System
-
-The interface shifts its entire colour theme when you switch lens — background, chat bubbles, badges, inputs, and hover states all change. Every mode has its own visual identity that reinforces the tone of the explanation.
-
----
-
-## ⚙️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | [Qwik](https://qwik.dev) + Qwik City (SSR) |
+| Frontend | [Leptos](https://leptos.dev) 0.7 (Rust → WASM, CSR) |
+| Build tool | [Trunk](https://trunkrs.dev) |
+| Styling | Tailwind CSS (CDN) + CSS custom properties |
 | Backend | [Axum](https://github.com/tokio-rs/axum) (Rust) |
+| Cache | [Moka](https://github.com/moka-rs/moka) (async in-memory, 1 h TTL) |
 | AI Runtime | [Ollama](https://ollama.com) |
 | Model | Llama 3 (`llama3`) |
 
+The entire stack — from the pixel in the browser to the HTTP call to Ollama — is written in Rust.
+
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 User (browser)
      │
      ▼
-Qwik City frontend  (:5173 dev / :4173 preview)
-     │  POST /api/explain  { word, lens }
+Leptos WASM app     (:8080 dev via Trunk)
+     │  POST /api/explain  { word, lens, stream }
      ▼
-Axum REST API        (:8080)
+Axum REST API       (:3001)
+     │  checks Moka cache → cache hit returns immediately
      │  POST /api/generate  { model, prompt, stream }
      ▼
-Ollama               (:11434)
+Ollama              (:11434)
      │
      ▼
-Llama 3 response → styled chat bubble
+token stream → SSE → Leptos reactive UI → chat bubble
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 | Tool | Install |
 |------|---------|
 | Rust + Cargo | https://rustup.rs |
-| Node.js ≥ 18 | https://nodejs.org |
+| `wasm32-unknown-unknown` target | `rustup target add wasm32-unknown-unknown` |
+| Trunk | `cargo install trunk` |
 | Ollama | https://ollama.com |
 
 ### 1. Pull the model
@@ -83,8 +84,6 @@ ollama pull llama3
 ollama serve
 ```
 
-Ollama listens on `http://localhost:11434` by default.
-
 ### 3. Start the backend
 
 ```bash
@@ -92,91 +91,125 @@ cd backend
 cargo run --release
 ```
 
-The server starts on **http://localhost:8080**.
-
-> First build will take a minute while Cargo fetches dependencies.
+Listens on **http://localhost:3001**. Set `BIND_ADDR`, `OLLAMA_URL`, or `OLLAMA_MODEL` environment variables to override defaults.
 
 ### 4. Start the frontend
 
 ```bash
 cd frontend
-npm install
-npm run dev
+trunk serve
 ```
 
-Open **http://localhost:5173** in your browser.
+Open **http://localhost:8080**. Trunk proxies `/api/*` to the backend automatically.
 
 ---
 
-## 📁 Project Structure
+## Production build
+
+```bash
+# Build the WASM frontend
+cd frontend && trunk build --release
+
+# Run the backend (serves frontend/dist/ as static files)
+cd ../backend && cargo run --release
+```
+
+The backend serves the compiled frontend from `../frontend/dist` by default. Override with `FRONTEND_DIST`.
+
+---
+
+## Project Structure
 
 ```
 wordlens-ai/
 ├── backend/
 │   ├── Cargo.toml
 │   └── src/
-│       └── main.rs          # Axum server, prompt builder, Ollama client
+│       ├── main.rs       # Axum server, Moka cache, /api/explain, /api/history
+│       ├── history.rs    # In-memory ring buffer (last 50 explanations)
+│       └── prompts.rs    # Prompt templates for each lens
 │
 ├── frontend/
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── vite.config.ts
-│   ├── public/
-│   │   ├── favicon.svg
-│   │   └── manifest.json
+│   ├── Cargo.toml        # Leptos + wasm-bindgen + wasm-streams
+│   ├── Trunk.toml        # Build config + dev proxy
+│   ├── index.html        # Entry point — Tailwind CDN, CSS variables, keyframes
 │   └── src/
-│       ├── global.css        # All theming & layout styles
-│       ├── root.tsx          # Qwik City app shell
-│       ├── entry.ssr.tsx     # SSR entry point
-│       └── routes/
-│           ├── layout.tsx    # Root layout (pass-through)
-│           └── index.tsx     # Main page — all chat UI & state
+│       └── main.rs       # Full Leptos app: components, SSE streaming, state
 │
 └── README.md
 ```
 
 ---
 
-## 🔌 API
+## API
 
 ### `POST /api/explain`
 
-**Request body:**
-
-```jsonc
+**Request:**
+```json
 {
-  "word": "entropy",      // required — the word or concept to explain
-  "lens": "cyberpunk",    // required — one of: simple | learning | game | cyberpunk | poetic
-  "stream": false         // optional — set true for SSE token streaming
+  "word": "entropy",
+  "lens": "cyberpunk",
+  "stream": false
 }
 ```
+`lens` must be one of: `simple` | `learning` | `game` | `cyberpunk` | `poetic`
 
-**Response (stream: false):**
-
+**Response (`stream: false`):**
 ```json
 {
   "explanation": "In the sprawling data-hive of New Shanghai...",
   "lens": "cyberpunk",
-  "word": "entropy"
+  "word": "entropy",
+  "cached": false
 }
 ```
+Non-streaming responses are cached (word + lens key). `cached: true` means the response was served from memory without hitting Ollama.
 
-**Response (stream: true):**  
-Server-Sent Events. Each event carries one token as `data`. A final `event: done` signals completion.
-
----
-
-## 🛠️ Development Notes
-
-- The Vite dev server proxies `/api/*` to `http://localhost:8080`, so the frontend and backend can run independently.
-- Switching lenses while a response is in flight is safe — the in-flight request completes with its original lens badge.
-- The `stream: false` mode in the frontend is the default. To enable token-by-token streaming, set `stream: true` in the `fetch` call in [frontend/src/routes/index.tsx](frontend/src/routes/index.tsx) — the backend already supports it.
-- To use a different model (e.g. `llama3.2` or `mistral`), change the `"model"` field in `backend/src/main.rs` → `build_prompt`'s caller in `explain_json` / `explain_stream`.
+**Response (`stream: true`):**
+Server-Sent Events. Each event carries one token as `data`. A final `event: done` signals completion. Streaming responses are recorded in history but not cached.
 
 ---
 
-## 🌍 Vision
+### `GET /api/history?limit=20`
 
-> From static definitions → to dynamic, multi-perspective thinking.
+Returns the last N explanations (max 50), most recent first.
 
-WordLens AI turns learning into something visual, intuitive, and playful by combining local AI, reactive UI, and expressive design.
+```json
+[
+  {
+    "word": "entropy",
+    "lens": "cyberpunk",
+    "snippet": "In the sprawling data-hive of New Shanghai...",
+    "timestamp": 1744000000
+  }
+]
+```
+
+---
+
+### `GET /health`
+
+```json
+{ "status": "ok" }
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BIND_ADDR` | `0.0.0.0:3001` | Backend listen address |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama base URL |
+| `OLLAMA_MODEL` | `llama3` | Model name passed to Ollama |
+| `FRONTEND_DIST` | `../frontend/dist` | Path to compiled frontend assets |
+
+---
+
+## Development Notes
+
+- Switching lenses mid-flight is safe — the in-flight request completes with its original lens badge.
+- The Moka cache uses a `(word, lens)` key (word is lowercased and trimmed). Cache entries expire after 1 hour.
+- History is in-memory only — it resets on backend restart.
+- To use a different model, set `OLLAMA_MODEL=llama3.2` (or any model you have pulled).
