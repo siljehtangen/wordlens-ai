@@ -1,0 +1,693 @@
+use futures::StreamExt;
+use leptos::prelude::*;
+use leptos_meta::*;
+use serde_json::json;
+use uuid::Uuid;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{Headers, Request, RequestInit, RequestMode, Response};
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, PartialEq, Copy)]
+enum Lens {
+    Simple,
+    Learning,
+    Game,
+    Cyberpunk,
+    Poetic,
+}
+
+impl Lens {
+    fn id(self) -> &'static str {
+        match self {
+            Lens::Simple => "simple",
+            Lens::Learning => "learning",
+            Lens::Game => "game",
+            Lens::Cyberpunk => "cyberpunk",
+            Lens::Poetic => "poetic",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Lens::Simple => "Simple",
+            Lens::Learning => "Learning",
+            Lens::Game => "Game",
+            Lens::Cyberpunk => "Cyberpunk",
+            Lens::Poetic => "Poetic",
+        }
+    }
+    fn tagline(self) -> &'static str {
+        match self {
+            Lens::Simple => "Clear & easy",
+            Lens::Learning => "Deep & structured",
+            Lens::Game => "Interactive & fun",
+            Lens::Cyberpunk => "Futuristic & dark",
+            Lens::Poetic => "Metaphorical & beautiful",
+        }
+    }
+    fn css_class(self) -> &'static str {
+        match self {
+            Lens::Simple => "lens-simple",
+            Lens::Learning => "lens-learning",
+            Lens::Game => "lens-game",
+            Lens::Cyberpunk => "lens-cyberpunk",
+            Lens::Poetic => "lens-poetic",
+        }
+    }
+    fn all() -> &'static [Lens] {
+        &[
+            Lens::Simple,
+            Lens::Learning,
+            Lens::Game,
+            Lens::Cyberpunk,
+            Lens::Poetic,
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Message {
+    id: String,
+    role: Role,
+    content: String,
+    lens: Option<Lens>,
+    streaming: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Role {
+    User,
+    Assistant,
+}
+
+// ── SVG Icons ─────────────────────────────────────────────────────────────────
+
+fn icon_eye() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+    }
+}
+
+fn icon_send() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m22 2-7 20-4-9-9-4Z"/>
+            <path d="M22 2 11 13"/>
+        </svg>
+    }
+}
+
+fn icon_refresh() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+            <path d="M8 16H3v5"/>
+        </svg>
+    }
+}
+
+fn icon_trash() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"/>
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            <line x1="10" x2="10" y1="11" y2="17"/>
+            <line x1="14" x2="14" y1="11" y2="17"/>
+        </svg>
+    }
+}
+
+fn icon_sparkles() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+            <path d="M5 3v4"/><path d="M3 5h4"/>
+            <path d="M19 17v4"/><path d="M17 19h4"/>
+        </svg>
+    }
+}
+
+fn lens_icon(lens: Lens) -> impl IntoView {
+    match lens {
+        Lens::Simple => view! {
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+        }.into_any(),
+        Lens::Learning => view! {
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+            </svg>
+        }.into_any(),
+        Lens::Game => view! {
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="6" x2="10" y1="12" y2="12"/>
+                <line x1="8" x2="8" y1="10" y2="14"/>
+                <line x1="15" x2="15.01" y1="13" y2="13"/>
+                <line x1="18" x2="18.01" y1="11" y2="11"/>
+                <rect width="20" height="12" x="2" y="6" rx="2"/>
+            </svg>
+        }.into_any(),
+        Lens::Cyberpunk => view! {
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <rect x="9" y="9" width="6" height="6"/>
+                <path d="M15 2v2"/><path d="M15 20v2"/>
+                <path d="M2 15h2"/><path d="M2 9h2"/>
+                <path d="M20 15h2"/><path d="M20 9h2"/>
+                <path d="M9 2v2"/><path d="M9 20v2"/>
+            </svg>
+        }.into_any(),
+        Lens::Poetic => view! {
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/>
+                <line x1="16" x2="2" y1="8" y2="22"/>
+                <line x1="17.5" x2="9" y1="15" y2="15"/>
+            </svg>
+        }.into_any(),
+    }
+}
+
+// ── SSE streaming ─────────────────────────────────────────────────────────────
+
+fn parse_sse_chunk(buffer: &mut String, new_data: &str) -> Vec<(String, bool)> {
+    buffer.push_str(new_data);
+    let mut results = Vec::new();
+
+    while let Some(pos) = buffer.find("\n\n") {
+        let block = buffer[..pos].to_string();
+        *buffer = buffer[pos + 2..].to_string();
+
+        let mut event_type = "message".to_string();
+        let mut data = String::new();
+
+        for line in block.lines() {
+            if let Some(s) = line.strip_prefix("event: ") {
+                event_type = s.trim().to_string();
+            } else if let Some(s) = line.strip_prefix("data: ") {
+                data = s.to_string();
+            }
+        }
+
+        if event_type == "done" {
+            results.push((String::new(), true));
+        } else if !data.is_empty() {
+            results.push((data, false));
+        }
+    }
+    results
+}
+
+async fn stream_explain(
+    word: String,
+    lens: Lens,
+    reply_id: String,
+    messages: RwSignal<Vec<Message>>,
+    loading: WriteSignal<bool>,
+) {
+    let body = json!({ "word": word, "lens": lens.id(), "stream": true }).to_string();
+
+    let headers = Headers::new().unwrap();
+    headers.set("Content-Type", "application/json").unwrap();
+
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_mode(RequestMode::SameOrigin);
+    opts.set_body(&wasm_bindgen::JsValue::from_str(&body));
+    opts.set_headers(&headers);
+
+    let request = match Request::new_with_str_and_init("/api/explain", &opts) {
+        Ok(r) => r,
+        Err(e) => {
+            push_error(&messages, &reply_id, &format!("{e:?}"));
+            loading.set(false);
+            return;
+        }
+    };
+
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return,
+    };
+
+    let resp_val = match JsFuture::from(window.fetch_with_request(&request)).await {
+        Ok(v) => v,
+        Err(e) => {
+            push_error(
+                &messages,
+                &reply_id,
+                "Could not reach the WordLens backend. Is `cargo run` running on port 3001?",
+            );
+            web_sys::console::error_1(&e);
+            loading.set(false);
+            return;
+        }
+    };
+
+    let resp: Response = resp_val.unchecked_into();
+
+    if !resp.ok() {
+        push_error(
+            &messages,
+            &reply_id,
+            &format!("Server error {}", resp.status()),
+        );
+        loading.set(false);
+        return;
+    }
+
+    // Add placeholder streaming message
+    messages.update(|v| {
+        v.push(Message {
+            id: reply_id.clone(),
+            role: Role::Assistant,
+            content: String::new(),
+            lens: Some(lens),
+            streaming: true,
+        });
+    });
+    loading.set(false);
+
+    let raw_body = match resp.body() {
+        Some(b) => b,
+        None => {
+            finish_streaming(&messages, &reply_id);
+            return;
+        }
+    };
+
+    let stream = wasm_streams::ReadableStream::from_raw(raw_body.unchecked_into());
+    let mut stream = stream.into_stream();
+    let mut buffer = String::new();
+
+    'outer: while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(_) => break,
+        };
+        let arr = js_sys::Uint8Array::new(&chunk);
+        let bytes = arr.to_vec();
+        let text = String::from_utf8_lossy(&bytes);
+
+        for (token, done) in parse_sse_chunk(&mut buffer, &text) {
+            if done {
+                break 'outer;
+            }
+            if !token.is_empty() {
+                messages.update(|v| {
+                    if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
+                        m.content.push_str(&token);
+                    }
+                });
+            }
+        }
+    }
+
+    finish_streaming(&messages, &reply_id);
+}
+
+fn push_error(messages: &RwSignal<Vec<Message>>, reply_id: &str, err: &str) {
+    messages.update(|v| {
+        if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
+            m.content = err.to_string();
+            m.streaming = false;
+        }
+    });
+}
+
+fn finish_streaming(messages: &RwSignal<Vec<Message>>, reply_id: &str) {
+    messages.update(|v| {
+        if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
+            m.streaming = false;
+        }
+    });
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+#[component]
+fn App() -> impl IntoView {
+    provide_meta_context();
+
+    let (input, set_input) = signal(String::new());
+    let (active_lens, set_active_lens) = signal(Lens::Simple);
+    let (loading, set_loading) = signal(false);
+    let messages: RwSignal<Vec<Message>> = RwSignal::new(Vec::new());
+
+    // Auto-scroll anchor
+    let messages_end = NodeRef::<leptos::html::Div>::new();
+
+    Effect::new(move |_| {
+        let _ = messages.get(); // track any message change
+        if let Some(el) = messages_end.get() {
+            el.scroll_into_view();
+        }
+    });
+
+    // ── send ──────────────────────────────────────────────────────────────────
+    let send = move || {
+        let word = input.get_untracked().trim().to_string();
+        if word.is_empty() || loading.get_untracked() {
+            return;
+        }
+
+        let base = Uuid::new_v4().to_string();
+        let reply_id = format!("{base}-reply");
+
+        messages.update(|v| {
+            v.push(Message {
+                id: format!("{base}-user"),
+                role: Role::User,
+                content: word.clone(),
+                lens: None,
+                streaming: false,
+            });
+        });
+        set_input.set(String::new());
+        set_loading.set(true);
+
+        let lens = active_lens.get_untracked();
+        leptos::task::spawn_local(stream_explain(
+            word,
+            lens,
+            reply_id,
+            messages,
+            set_loading,
+        ));
+    };
+
+    // ── regenerate ────────────────────────────────────────────────────────────
+    let regenerate = move || {
+        let msgs = messages.get_untracked();
+        let last_user = msgs.iter().rev().find(|m| m.role == Role::User).cloned();
+        if let Some(u) = last_user {
+            let idx = msgs.iter().rposition(|m| m.id == u.id).unwrap_or(0);
+            messages.update(|v| v.truncate(idx + 1));
+            set_input.set(u.content.clone());
+            // re-trigger send on next microtask
+            let word = u.content;
+            let base = Uuid::new_v4().to_string();
+            let reply_id = format!("{base}-reply");
+            messages.update(|v| {
+                // replace the user message at the truncation point
+                if let Some(last) = v.last_mut() {
+                    last.id = format!("{base}-user");
+                }
+            });
+            set_loading.set(true);
+            let lens = active_lens.get_untracked();
+            leptos::task::spawn_local(stream_explain(
+                word,
+                lens,
+                reply_id,
+                messages,
+                set_loading,
+            ));
+        }
+    };
+
+    let has_responses =
+        move || messages.get().iter().any(|m| m.role == Role::Assistant);
+
+    view! {
+        <Title text="WordLens AI"/>
+
+        <div class=move || format!(
+            "app flex flex-col h-dvh w-full {}",
+            active_lens.get().css_class()
+        )>
+
+            // ── Header ────────────────────────────────────────────────────────
+            <header class="flex items-center gap-3 px-5 py-3 border-b shrink-0"
+                style="border-color:var(--bot-border);background:var(--bg-secondary)">
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
+                    style="background:var(--accent)">
+                    {icon_eye()}
+                </div>
+                <div>
+                    <h1 class="text-base font-bold tracking-tight leading-none"
+                        style="color:var(--accent)">
+                        "WordLens"
+                    </h1>
+                    <p class="text-[0.7rem] mt-0.5 leading-none"
+                        style="color:var(--text-secondary)">
+                        "Understand anything through multiple perspectives"
+                    </p>
+                </div>
+            </header>
+
+            // ── Lens selector ─────────────────────────────────────────────────
+            <nav class="flex gap-1.5 px-4 py-2.5 border-b overflow-x-auto scrollbar-hide shrink-0"
+                style="background:var(--bg-secondary);border-color:var(--bot-border)"
+                aria-label="Select lens">
+                {Lens::all().iter().map(|&lens| {
+                    view! {
+                        <button
+                            class=move || {
+                                let active = active_lens.get() == lens;
+                                let base = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-all duration-200";
+                                if active {
+                                    format!("{base} text-white border-transparent shadow-sm scale-[1.02]")
+                                } else {
+                                    format!("{base} border-[var(--bot-border)] hover:-translate-y-px")
+                                }
+                            }
+                            style=move || {
+                                if active_lens.get() == lens {
+                                    "background:var(--accent);color:#fff".to_string()
+                                } else {
+                                    "color:var(--text-secondary)".to_string()
+                                }
+                            }
+                            on:click=move |_| set_active_lens.set(lens)
+                            aria-pressed=move || (active_lens.get() == lens).to_string()
+                            title=lens.tagline()
+                        >
+                            {lens_icon(lens)}
+                            <span class="hidden sm:inline">{lens.label()}</span>
+                            <span class="hidden lg:inline opacity-60 font-normal">
+                                {format!("— {}", lens.tagline())}
+                            </span>
+                        </button>
+                    }
+                }).collect_view()}
+            </nav>
+
+            // ── Chat area ─────────────────────────────────────────────────────
+            <main class="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3 chat-scrollbar chat-inner"
+                style="background:var(--bg-primary)">
+
+                // Empty state
+                {move || (messages.get().is_empty()).then(|| view! {
+                    <div class="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+                        <div class="pulse-icon opacity-90" style="color:var(--accent)">
+                            {icon_sparkles()}
+                        </div>
+                        <div class="space-y-1">
+                            <p class="font-semibold text-[0.95rem]" style="color:var(--text-primary)">
+                                "Enter any word, concept, or idea"
+                            </p>
+                            <p class="text-xs" style="color:var(--text-muted)">
+                                "Pick a lens above to shape how it's explained"
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 justify-center mt-1">
+                            {["entropy", "democracy", "recursion", "love", "gravity"].iter().map(|&ex| {
+                                view! {
+                                    <button
+                                        class="px-3 py-1.5 rounded-full text-xs font-medium border hover:-translate-y-px transition-all duration-200 italic"
+                                        style="background:var(--accent-light);color:var(--accent-bright);border-color:var(--bot-border)"
+                                        on:click=move |_| set_input.set(ex.to_string())
+                                    >
+                                        {ex}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                    </div>
+                })}
+
+                // Messages
+                <For
+                    each=move || messages.get()
+                    key=|m| m.id.clone()
+                    children=move |msg| {
+                        let is_user = msg.role == Role::User;
+                        let lens = msg.lens;
+                        let streaming = msg.streaming;
+                        let content = msg.content.clone();
+
+                        view! {
+                            <div class=move || format!(
+                                "flex flex-col max-w-[82%] msg-in {}",
+                                if is_user { "self-end items-end" } else { "self-start items-start" }
+                            )>
+                                // Lens badge
+                                {lens.map(|l| view! {
+                                    <div class="flex items-center gap-1 mb-1 px-1">
+                                        <span class="flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-widest"
+                                            style="color:var(--badge-text)">
+                                            {lens_icon(l)}
+                                            {l.label()}
+                                        </span>
+                                    </div>
+                                })}
+
+                                // Bubble
+                                <div
+                                    class=move || {
+                                        let base = "px-4 py-2.5 leading-relaxed text-[0.91rem] break-words whitespace-pre-wrap";
+                                        if is_user {
+                                            format!("{base} rounded-2xl rounded-br-sm shadow-sm")
+                                        } else {
+                                            format!("{base} border rounded-2xl rounded-tl-sm")
+                                        }
+                                    }
+                                    style=move || {
+                                        if is_user {
+                                            "background:var(--user-bg);color:var(--user-text)".to_string()
+                                        } else {
+                                            "background:var(--bot-bg);color:var(--bot-text);border-color:var(--bot-border)".to_string()
+                                        }
+                                    }
+                                >
+                                    {content}
+                                    {streaming.then(|| view! {
+                                        <span class="cursor ml-0.5" aria-hidden="true">"▌"</span>
+                                    })}
+                                </div>
+                            </div>
+                        }
+                    }
+                />
+
+                // Typing indicator
+                {move || loading.get().then(|| view! {
+                    <div class="self-start msg-in">
+                        <div class="typing-dots flex gap-1.5 px-4 py-3 border rounded-2xl rounded-tl-sm"
+                            style="background:var(--bot-bg);border-color:var(--bot-border)">
+                            <span/>
+                            <span/>
+                            <span/>
+                        </div>
+                    </div>
+                })}
+
+                <div node_ref=messages_end class="h-px shrink-0"/>
+            </main>
+
+            // ── Input bar ─────────────────────────────────────────────────────
+            <footer class="px-4 pb-5 pt-3 border-t shrink-0 flex flex-col gap-2"
+                style="background:var(--bg-secondary);border-color:var(--bot-border)">
+
+                <div class="flex items-center gap-2 border rounded-2xl pl-3 pr-1.5 py-1.5 transition-colors duration-200 input-ring"
+                    style="background:var(--input-bg);border-color:var(--input-border)">
+
+                    // Active lens chip
+                    <div class="flex items-center gap-1 text-[0.68rem] font-bold rounded-full px-2 py-0.5 shrink-0 select-none"
+                        style="color:var(--badge-text);background:var(--badge-bg)">
+                        {move || lens_icon(active_lens.get())}
+                        <span class="hidden sm:inline">{move || active_lens.get().label()}</span>
+                    </div>
+
+                    <input
+                        class="flex-1 bg-transparent border-none outline-none text-[0.9rem] placeholder:opacity-50 min-w-0 py-0.5"
+                        style="color:var(--text-primary)"
+                        type="text"
+                        placeholder="Enter a word or concept…"
+                        prop:value=move || input.get()
+                        on:input=move |e| {
+                            use wasm_bindgen::JsCast;
+                            let val = e.target().unwrap()
+                                .unchecked_into::<web_sys::HtmlInputElement>()
+                                .value();
+                            set_input.set(val);
+                        }
+                        on:keydown=move |e| {
+                            if e.key() == "Enter" && !e.shift_key() {
+                                e.prevent_default();
+                                send();
+                            }
+                        }
+                        disabled=move || loading.get()
+                        aria-label="Word or concept input"
+                    />
+
+                    // Send button
+                    <button
+                        class="w-9 h-9 rounded-xl text-white flex items-center justify-center shrink-0 transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                        style="background:var(--accent)"
+                        on:click=move |_| send()
+                        disabled=move || loading.get() || input.get().trim().is_empty()
+                        aria-label="Send"
+                    >
+                        {move || if loading.get() {
+                            view! { <span class="spinner" aria-hidden="true"/> }.into_any()
+                        } else {
+                            icon_send().into_any()
+                        }}
+                    </button>
+                </div>
+
+                // Secondary actions
+                {move || has_responses().then(|| view! {
+                    <div class="flex gap-2 justify-end">
+                        <button
+                            class="flex items-center gap-1.5 text-[0.72rem] font-medium px-3 py-1.5 rounded-full border transition-all duration-200 disabled:opacity-40"
+                            style="color:var(--text-secondary);border-color:var(--bot-border)"
+                            on:click=move |_| regenerate()
+                            disabled=move || loading.get()
+                        >
+                            {icon_refresh()}
+                            "Regenerate"
+                        </button>
+                        <button
+                            class="flex items-center gap-1.5 text-[0.72rem] font-medium px-3 py-1.5 rounded-full border hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all duration-200"
+                            style="color:var(--text-secondary);border-color:var(--bot-border)"
+                            on:click=move |_| messages.update(|v| v.clear())
+                        >
+                            {icon_trash()}
+                            "Clear"
+                        </button>
+                    </div>
+                })}
+            </footer>
+        </div>
+    }
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+fn main() {
+    console_error_panic_hook::set_once();
+    leptos::mount::mount_to_body(App);
+}

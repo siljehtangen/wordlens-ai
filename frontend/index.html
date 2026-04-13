@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WordLens AI</title>
+  <meta name="description" content="Understand any word, concept, or idea through multiple AI-powered perspectives." />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent:      'var(--accent)',
+            'accent-lt': 'var(--accent-light)',
+            'bg-pri':    'var(--bg-primary)',
+            'bg-sec':    'var(--bg-secondary)',
+            'tx-pri':    'var(--text-primary)',
+            'tx-sec':    'var(--text-secondary)',
+            'tx-muted':  'var(--text-muted)',
+            'user-bg':   'var(--user-bg)',
+            'user-tx':   'var(--user-text)',
+            'bot-bg':    'var(--bot-bg)',
+            'bot-tx':    'var(--bot-text)',
+            'bot-bdr':   'var(--bot-border)',
+            'inp-bg':    'var(--input-bg)',
+            'inp-bdr':   'var(--input-border)',
+            'badge-bg':  'var(--badge-bg)',
+            'badge-tx':  'var(--badge-text)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      background-color: var(--bg-primary, #e8f1fb);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+
+    /* ── Theme variables ── */
+    .app {
+      --bg-primary:     #e8f1fb;
+      --bg-secondary:   #d1e4f6;
+      --accent:         #2563eb;
+      --accent-light:   rgba(37,99,235,0.12);
+      --accent-bright:  #3b82f6;
+      --text-primary:   #1e3a5f;
+      --text-secondary: #4a6fa5;
+      --text-muted:     #7ea5c8;
+      --user-bg:        #2563eb;
+      --user-text:      #ffffff;
+      --bot-bg:         #ffffff;
+      --bot-text:       #1e3a5f;
+      --bot-border:     rgba(37,99,235,0.18);
+      --input-bg:       #ffffff;
+      --input-border:   rgba(37,99,235,0.3);
+      --badge-bg:       rgba(37,99,235,0.1);
+      --badge-text:     #2563eb;
+      transition: background-color 0.4s ease, color 0.3s ease;
+    }
+    .app.lens-learning {
+      --bg-primary:     #13002b;
+      --bg-secondary:   #1e0040;
+      --accent:         #a855f7;
+      --accent-light:   rgba(168,85,247,0.18);
+      --accent-bright:  #c084fc;
+      --text-primary:   #f3e8ff;
+      --text-secondary: #c084fc;
+      --text-muted:     #7c3aed;
+      --user-bg:        #7c3aed;
+      --user-text:      #f3e8ff;
+      --bot-bg:         #1e0040;
+      --bot-text:       #f3e8ff;
+      --bot-border:     rgba(168,85,247,0.3);
+      --input-bg:       #1e0040;
+      --input-border:   rgba(168,85,247,0.45);
+      --badge-bg:       rgba(168,85,247,0.15);
+      --badge-text:     #c084fc;
+    }
+    .app.lens-game {
+      --bg-primary:     #001800;
+      --bg-secondary:   #002200;
+      --accent:         #22c55e;
+      --accent-light:   rgba(34,197,94,0.18);
+      --accent-bright:  #4ade80;
+      --text-primary:   #dcfce7;
+      --text-secondary: #4ade80;
+      --text-muted:     #16a34a;
+      --user-bg:        #16a34a;
+      --user-text:      #dcfce7;
+      --bot-bg:         #002200;
+      --bot-text:       #dcfce7;
+      --bot-border:     rgba(34,197,94,0.35);
+      --input-bg:       #002200;
+      --input-border:   rgba(34,197,94,0.5);
+      --badge-bg:       rgba(34,197,94,0.15);
+      --badge-text:     #4ade80;
+    }
+    .app.lens-cyberpunk {
+      --bg-primary:     #04040f;
+      --bg-secondary:   #08081e;
+      --accent:         #e879f9;
+      --accent-light:   rgba(240,171,252,0.15);
+      --accent-bright:  #f0abfc;
+      --text-primary:   #e2e8f0;
+      --text-secondary: #38bdf8;
+      --text-muted:     #0e7490;
+      --user-bg:        #7e22ce;
+      --user-text:      #f0abfc;
+      --bot-bg:         #08081e;
+      --bot-text:       #e2e8f0;
+      --bot-border:     rgba(240,171,252,0.25);
+      --input-bg:       #08081e;
+      --input-border:   rgba(240,171,252,0.35);
+      --badge-bg:       rgba(240,171,252,0.1);
+      --badge-text:     #f0abfc;
+    }
+    .app.lens-poetic {
+      --bg-primary:     #1c0d00;
+      --bg-secondary:   #2d1400;
+      --accent:         #fb923c;
+      --accent-light:   rgba(251,146,60,0.18);
+      --accent-bright:  #fdba74;
+      --text-primary:   #fef3c7;
+      --text-secondary: #fbbf24;
+      --text-muted:     #b45309;
+      --user-bg:        #c2410c;
+      --user-text:      #fef3c7;
+      --bot-bg:         #2d1400;
+      --bot-text:       #fef3c7;
+      --bot-border:     rgba(251,146,60,0.3);
+      --input-bg:       #2d1400;
+      --input-border:   rgba(251,146,60,0.45);
+      --badge-bg:       rgba(251,146,60,0.14);
+      --badge-text:     #fdba74;
+    }
+
+    /* ── Scrollbars ── */
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { scrollbar-width: none; }
+    .chat-scrollbar::-webkit-scrollbar { width: 4px; }
+    .chat-scrollbar::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 2px; }
+
+    /* ── Focus ring ── */
+    .input-ring:focus-within {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    /* ── Keyframes ── */
+    @keyframes msgIn    { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pulseIcon{ 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.12);opacity:.7} }
+    @keyframes dotBounce{ 0%,80%,100%{transform:translateY(0);opacity:.45} 40%{transform:translateY(-6px);opacity:1} }
+    @keyframes blink    { 50%{opacity:0} }
+    @keyframes spin     { to{transform:rotate(360deg)} }
+
+    .msg-in   { animation: msgIn 0.25s ease-out; }
+    .pulse-icon { animation: pulseIcon 2.4s ease-in-out infinite; }
+    .cursor   { display:inline-block; color:var(--accent); animation: blink 1s step-end infinite; }
+
+    .typing-dots span {
+      display:block; width:7px; height:7px; border-radius:50%;
+      background:var(--accent); animation: dotBounce 1.2s ease-in-out infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay:.2s; }
+    .typing-dots span:nth-child(3) { animation-delay:.4s; }
+
+    .spinner {
+      display:block; width:15px; height:15px;
+      border:2px solid rgba(255,255,255,.3); border-top-color:#fff;
+      border-radius:50%; animation: spin 0.7s linear infinite;
+    }
+
+    /* ── Cyberpunk scanlines ── */
+    .lens-cyberpunk .chat-inner { position: relative; }
+    .lens-cyberpunk .chat-inner::after {
+      content:""; position:fixed; inset:0;
+      background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,255,.016) 2px,rgba(0,255,255,.016) 4px);
+      pointer-events:none; z-index:0;
+    }
+    .lens-cyberpunk .msg-in { position:relative; z-index:1; }
+  </style>
+
+  <link data-trunk rel="rust" data-bin="wordlens-frontend" />
+</head>
+<body>
+  <!-- Leptos mounts here -->
+</body>
+</html>
