@@ -1,13 +1,9 @@
-# Rust
+# Rust build artefacts
 /backend/target/
-/backend/Cargo.lock
+/frontend/target/
 
-# Node / Qwik
-/frontend/node_modules/
+# Trunk output
 /frontend/dist/
-/frontend/.qwik/
-/frontend/server/
-/frontend/.vite/
 
 # OS
 .DS_Store
