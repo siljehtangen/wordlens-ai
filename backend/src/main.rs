@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Json, State},
+    extract::{Json, Query, State},
     http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -9,20 +9,33 @@ use axum::{
     Router,
 };
 use futures::StreamExt;
+use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info, warn};
 
+mod history;
+mod prompts;
+
+use history::History;
+
 const MAX_WORD_LEN: usize = 200;
 const VALID_LENSES: &[&str] = &["simple", "learning", "game", "cyberpunk", "poetic"];
+const CACHE_MAX_CAPACITY: u64 = 500;
+
+// ── State ─────────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct AppState {
     http: reqwest::Client,
     ollama_url: String,
+    cache: Cache<(String, String), String>,
+    history: Arc<History>,
 }
+
+// ── Request / response types ──────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct ExplainRequest {
@@ -32,11 +45,19 @@ struct ExplainRequest {
     stream: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct HistoryQuery {
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+fn default_limit() -> usize { 20 }
+
 #[derive(Debug, Serialize)]
 struct ExplainResponse {
     explanation: String,
     lens: String,
     word: String,
+    cached: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,7 +65,7 @@ struct ErrorResponse {
     error: String,
 }
 
-mod prompts;
+// ── Validation & prompt ───────────────────────────────────────────────────────
 
 fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
     let word = payload.word.trim();
@@ -77,8 +98,28 @@ fn build_prompt(word: &str, lens: &str) -> String {
     template.replace("{word}", word)
 }
 
+fn ollama_body(prompt: &str, stream: bool) -> serde_json::Value {
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
+    serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "stream": stream,
+        "options": { "num_predict": 200, "num_ctx": 1024, "temperature": 0.7 }
+    })
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
 async fn health() -> impl IntoResponse {
     JsonResponse(serde_json::json!({ "status": "ok" }))
+}
+
+async fn get_history(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<HistoryQuery>,
+) -> impl IntoResponse {
+    let limit = q.limit.min(50);
+    JsonResponse(state.history.recent(limit))
 }
 
 async fn explain(
@@ -112,19 +153,23 @@ async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
 ) -> Result<JsonResponse<ExplainResponse>, (StatusCode, JsonResponse<ErrorResponse>)> {
-    let prompt = build_prompt(&payload.word, &payload.lens);
+    let word = payload.word.trim().to_lowercase();
+    let lens = payload.lens.clone();
+    let cache_key = (word.clone(), lens.clone());
 
-    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
-    let body = serde_json::json!({
-        "model": model,
-        "prompt": prompt,
-        "stream": false,
-        "options": {
-            "num_predict": 200,
-            "num_ctx": 1024,
-            "temperature": 0.7
-        }
-    });
+    // Cache hit
+    if let Some(cached) = state.cache.get(&cache_key).await {
+        info!(word = %word, lens = %lens, "cache hit");
+        return Ok(JsonResponse(ExplainResponse {
+            explanation: cached,
+            lens,
+            word: payload.word,
+            cached: true,
+        }));
+    }
+
+    let prompt = build_prompt(&payload.word, &payload.lens);
+    let body = ollama_body(&prompt, false);
 
     let resp = state
         .http
@@ -172,10 +217,15 @@ async fn explain_json(
         .trim()
         .to_string();
 
+    // Populate cache and history
+    state.cache.insert(cache_key, explanation.clone()).await;
+    state.history.push(word, lens.clone(), &explanation);
+
     Ok(JsonResponse(ExplainResponse {
         explanation,
-        lens: payload.lens,
+        lens,
         word: payload.word,
+        cached: false,
     }))
 }
 
@@ -187,18 +237,7 @@ async fn explain_stream(
     (StatusCode, JsonResponse<ErrorResponse>),
 > {
     let prompt = build_prompt(&payload.word, &payload.lens);
-
-    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
-    let body = serde_json::json!({
-        "model": model,
-        "prompt": prompt,
-        "stream": true,
-        "options": {
-            "num_predict": 200,
-            "num_ctx": 1024,
-            "temperature": 0.7
-        }
-    });
+    let body = ollama_body(&prompt, true);
 
     let resp = state
         .http
@@ -217,9 +256,15 @@ async fn explain_stream(
             )
         })?;
 
+    // Collect tokens for history
+    let word = payload.word.trim().to_lowercase();
+    let lens = payload.lens.clone();
+    let history = Arc::clone(&state.history);
+    let mut full_text = String::new();
+
     let event_stream = resp
         .bytes_stream()
-        .map(|chunk| {
+        .map(move |chunk| {
             let chunk = chunk.map_err(|e| {
                 error!(error = %e, "error reading Ollama stream chunk");
             })?;
@@ -228,19 +273,21 @@ async fn explain_stream(
                 return Err(());
             }
             let json: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
-                error!(error = %e, raw = %line, "failed to parse Ollama stream chunk");
+                error!(error = %e, raw = %line, "failed to parse chunk");
             })?;
             let token = json["response"].as_str().unwrap_or("").to_string();
             let done = json["done"].as_bool().unwrap_or(false);
             Ok((token, done))
         })
         .filter_map(|r| async move { r.ok() })
-        .flat_map(|(token, done)| {
+        .flat_map(move |(token, done)| {
             let mut events: Vec<Result<Event, axum::Error>> = Vec::new();
             if !token.is_empty() {
+                full_text.push_str(&token);
                 events.push(Ok(Event::default().data(token)));
             }
             if done {
+                history.push(word.clone(), lens.clone(), &full_text);
                 events.push(Ok(Event::default().event("done").data("")));
             }
             futures::stream::iter(events)
@@ -248,6 +295,8 @@ async fn explain_stream(
 
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::default()))
 }
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
@@ -263,12 +312,19 @@ async fn main() {
 
     info!("Using Ollama at {ollama_url}");
 
+    let cache: Cache<(String, String), String> = Cache::builder()
+        .max_capacity(CACHE_MAX_CAPACITY)
+        .time_to_live(std::time::Duration::from_secs(3600))
+        .build();
+
     let state = Arc::new(AppState {
         http: reqwest::Client::builder()
             .pool_max_idle_per_host(4)
             .build()
             .expect("Failed to build HTTP client"),
         ollama_url,
+        cache,
+        history: Arc::new(History::new()),
     });
 
     let cors = CorsLayer::new()
@@ -286,6 +342,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/explain", post(explain))
+        .route("/api/history", get(get_history))
         .with_state(state)
         .layer(cors)
         .fallback_service(serve_dir);
@@ -294,7 +351,6 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| {
         eprintln!("ERROR: Failed to bind to {addr}: {e}");
-        eprintln!("       Is another process already using that port?");
         std::process::exit(1);
     });
 
