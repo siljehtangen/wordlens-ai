@@ -134,7 +134,7 @@ fn icon_trash() -> impl IntoView {
 
 fn icon_sparkles() -> impl IntoView {
     view! {
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" stroke-width="1.5"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
@@ -447,26 +447,30 @@ fn App() -> impl IntoView {
         )>
 
             // ── Header ────────────────────────────────────────────────────────
-            <header class="flex items-center gap-3 px-5 py-3 border-b shrink-0"
+            <header class="flex items-center gap-3 px-5 py-4 border-b shrink-0 glass-panel"
                 style="border-color:var(--bot-border);background:var(--bg-secondary)">
-                <div class="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
-                    style="background:var(--accent)">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
+                    style="background:linear-gradient(135deg,var(--accent) 0%,var(--accent-bright) 100%);box-shadow:0 4px 16px var(--accent-glow)">
                     {icon_eye()}
                 </div>
-                <div>
+                <div class="flex-1 min-w-0">
                     <h1 class="text-base font-bold tracking-tight leading-none"
                         style="color:var(--accent)">
                         "WordLens"
                     </h1>
-                    <p class="text-[0.7rem] mt-0.5 leading-none"
+                    <p class="text-[0.68rem] mt-0.5 leading-none"
                         style="color:var(--text-secondary)">
-                        "Understand anything through multiple perspectives"
+                        "Understand anything · multiple perspectives"
                     </p>
                 </div>
+                <span class="text-[0.6rem] font-bold tracking-widest px-2.5 py-1 rounded-full uppercase shrink-0"
+                    style="background:var(--accent-light);color:var(--accent)">
+                    "AI"
+                </span>
             </header>
 
             // ── Lens selector ─────────────────────────────────────────────────
-            <nav class="flex gap-1.5 px-4 py-2.5 border-b overflow-x-auto scrollbar-hide shrink-0"
+            <nav class="flex gap-2 px-4 py-3 border-b overflow-x-auto scrollbar-hide shrink-0"
                 style="background:var(--bg-secondary);border-color:var(--bot-border)"
                 aria-label="Select lens">
                 {Lens::all().iter().map(|&lens| {
@@ -474,18 +478,18 @@ fn App() -> impl IntoView {
                         <button
                             class=move || {
                                 let active = active_lens.get() == lens;
-                                let base = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-all duration-200";
+                                let base = "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-all duration-200";
                                 if active {
-                                    format!("{base} text-white border-transparent shadow-sm scale-[1.02]")
+                                    format!("{base} text-white border-transparent scale-[1.02]")
                                 } else {
-                                    format!("{base} border-[var(--bot-border)] hover:-translate-y-px")
+                                    format!("{base} hover:scale-[1.02] hover:-translate-y-px")
                                 }
                             }
                             style=move || {
                                 if active_lens.get() == lens {
-                                    "background:var(--accent);color:#fff".to_string()
+                                    "background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 2px 12px var(--accent-glow)".to_string()
                                 } else {
-                                    "color:var(--text-secondary)".to_string()
+                                    "color:var(--text-secondary);border-color:var(--bot-border)".to_string()
                                 }
                             }
                             on:click=move |_| set_active_lens.set(lens)
@@ -494,7 +498,7 @@ fn App() -> impl IntoView {
                         >
                             {lens_icon(lens)}
                             <span class="hidden sm:inline">{lens.label()}</span>
-                            <span class="hidden lg:inline opacity-60 font-normal">
+                            <span class="hidden lg:inline opacity-55 font-normal text-[0.7rem]">
                                 {format!("— {}", lens.tagline())}
                             </span>
                         </button>
@@ -503,20 +507,23 @@ fn App() -> impl IntoView {
             </nav>
 
             // ── Chat area ─────────────────────────────────────────────────────
-            <main class="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3 chat-scrollbar chat-inner"
+            <main class="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-4 chat-scrollbar chat-inner"
                 style="background:var(--bg-primary)">
 
                 // Empty state
                 {move || (messages.get().is_empty()).then(|| view! {
-                    <div class="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
-                        <div class="pulse-icon opacity-90" style="color:var(--accent)">
-                            {icon_sparkles()}
+                    <div class="flex-1 flex flex-col items-center justify-center gap-5 px-4 py-16 text-center select-none">
+                        <div class="relative flex items-center justify-center w-20 h-20">
+                            <div class="ambient-circle"/>
+                            <div class="relative pulse-icon" style="color:var(--accent)">
+                                {icon_sparkles()}
+                            </div>
                         </div>
-                        <div class="space-y-1">
-                            <p class="font-semibold text-[0.95rem]" style="color:var(--text-primary)">
+                        <div class="space-y-1.5">
+                            <p class="font-semibold text-[1rem] tracking-tight" style="color:var(--text-primary)">
                                 "Enter any word, concept, or idea"
                             </p>
-                            <p class="text-xs" style="color:var(--text-muted)">
+                            <p class="text-xs leading-relaxed" style="color:var(--text-muted)">
                                 "Pick a lens above to shape how it's explained"
                             </p>
                         </div>
@@ -524,7 +531,7 @@ fn App() -> impl IntoView {
                             {["entropy", "democracy", "recursion", "love", "gravity"].iter().map(|&ex| {
                                 view! {
                                     <button
-                                        class="px-3 py-1.5 rounded-full text-xs font-medium border hover:-translate-y-px transition-all duration-200 italic"
+                                        class="px-3.5 py-1.5 rounded-full text-xs font-medium border hover:-translate-y-0.5 hover:shadow-sm transition-all duration-200 italic"
                                         style="background:var(--accent-light);color:var(--accent-bright);border-color:var(--bot-border)"
                                         on:click=move |_| set_input.set(ex.to_string())
                                     >
@@ -548,13 +555,13 @@ fn App() -> impl IntoView {
 
                         view! {
                             <div class=move || format!(
-                                "flex flex-col max-w-[82%] msg-in {}",
+                                "flex flex-col max-w-[80%] msg-in {}",
                                 if is_user { "self-end items-end" } else { "self-start items-start" }
                             )>
                                 // Lens badge
                                 {lens.map(|l| view! {
-                                    <div class="flex items-center gap-1 mb-1 px-1">
-                                        <span class="flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-widest"
+                                    <div class="flex items-center gap-1 mb-1.5 px-1">
+                                        <span class="flex items-center gap-1 text-[0.62rem] font-bold uppercase tracking-widest"
                                             style="color:var(--badge-text)">
                                             {lens_icon(l)}
                                             {l.label()}
@@ -565,18 +572,18 @@ fn App() -> impl IntoView {
                                 // Bubble
                                 <div
                                     class=move || {
-                                        let base = "px-4 py-2.5 leading-relaxed text-[0.91rem] break-words whitespace-pre-wrap";
+                                        let base = "px-4 py-3 leading-relaxed text-[0.91rem] break-words whitespace-pre-wrap";
                                         if is_user {
-                                            format!("{base} rounded-2xl rounded-br-sm shadow-sm")
+                                            format!("{base} rounded-2xl rounded-br-sm")
                                         } else {
                                             format!("{base} border rounded-2xl rounded-tl-sm")
                                         }
                                     }
                                     style=move || {
                                         if is_user {
-                                            "background:var(--user-bg);color:var(--user-text)".to_string()
+                                            "background:linear-gradient(135deg,var(--user-bg) 0%,var(--accent-bright) 100%);color:var(--user-text);box-shadow:0 3px 14px var(--accent-glow)".to_string()
                                         } else {
-                                            "background:var(--bot-bg);color:var(--bot-text);border-color:var(--bot-border)".to_string()
+                                            "background:var(--bot-bg);color:var(--bot-text);border-color:var(--bot-border);box-shadow:0 1px 8px rgba(0,0,0,0.07)".to_string()
                                         }
                                     }
                                 >
@@ -593,8 +600,8 @@ fn App() -> impl IntoView {
                 // Typing indicator
                 {move || loading.get().then(|| view! {
                     <div class="self-start msg-in">
-                        <div class="typing-dots flex gap-1.5 px-4 py-3 border rounded-2xl rounded-tl-sm"
-                            style="background:var(--bot-bg);border-color:var(--bot-border)">
+                        <div class="typing-dots flex gap-2 px-4 py-3.5 border rounded-2xl rounded-tl-sm"
+                            style="background:var(--bot-bg);border-color:var(--bot-border);box-shadow:0 1px 8px rgba(0,0,0,0.07)">
                             <span/>
                             <span/>
                             <span/>
@@ -606,21 +613,21 @@ fn App() -> impl IntoView {
             </main>
 
             // ── Input bar ─────────────────────────────────────────────────────
-            <footer class="px-4 pb-5 pt-3 border-t shrink-0 flex flex-col gap-2"
+            <footer class="px-4 pb-6 pt-3.5 border-t shrink-0 flex flex-col gap-2.5 glass-panel"
                 style="background:var(--bg-secondary);border-color:var(--bot-border)">
 
-                <div class="flex items-center gap-2 border rounded-2xl pl-3 pr-1.5 py-1.5 transition-colors duration-200 input-ring"
+                <div class="flex items-center gap-2.5 border rounded-2xl pl-4 pr-1.5 py-2 transition-colors duration-200 input-ring"
                     style="background:var(--input-bg);border-color:var(--input-border)">
 
                     // Active lens chip
-                    <div class="flex items-center gap-1 text-[0.68rem] font-bold rounded-full px-2 py-0.5 shrink-0 select-none"
+                    <div class="flex items-center gap-1.5 text-[0.68rem] font-bold rounded-full px-2.5 py-1 shrink-0 select-none"
                         style="color:var(--badge-text);background:var(--badge-bg)">
                         {move || lens_icon(active_lens.get())}
                         <span class="hidden sm:inline">{move || active_lens.get().label()}</span>
                     </div>
 
                     <input
-                        class="flex-1 bg-transparent border-none outline-none text-[0.9rem] placeholder:opacity-50 min-w-0 py-0.5"
+                        class="flex-1 bg-transparent border-none outline-none text-[0.91rem] placeholder:opacity-40 min-w-0"
                         style="color:var(--text-primary)"
                         type="text"
                         placeholder="Enter a word or concept…"
@@ -644,8 +651,8 @@ fn App() -> impl IntoView {
 
                     // Send button
                     <button
-                        class="w-9 h-9 rounded-xl text-white flex items-center justify-center shrink-0 transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
-                        style="background:var(--accent)"
+                        class="w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 transition-all duration-150 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style="background:linear-gradient(135deg,var(--accent) 0%,var(--accent-bright) 100%);box-shadow:0 2px 10px var(--accent-glow)"
                         on:click=move |_| send()
                         disabled=move || loading.get() || input.get().trim().is_empty()
                         aria-label="Send"
@@ -662,7 +669,7 @@ fn App() -> impl IntoView {
                 {move || has_responses().then(|| view! {
                     <div class="flex gap-2 justify-end">
                         <button
-                            class="flex items-center gap-1.5 text-[0.72rem] font-medium px-3 py-1.5 rounded-full border transition-all duration-200 disabled:opacity-40"
+                            class="flex items-center gap-1.5 text-[0.72rem] font-medium px-3 py-1.5 rounded-full border hover:opacity-80 transition-all duration-200 disabled:opacity-40"
                             style="color:var(--text-secondary);border-color:var(--bot-border)"
                             on:click=move |_| regenerate()
                             disabled=move || loading.get()
