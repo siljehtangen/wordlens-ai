@@ -456,11 +456,11 @@ fn App() -> impl IntoView {
                 <div class="flex-1 min-w-0">
                     <h1 class="text-base font-bold tracking-tight leading-none"
                         style="color:var(--accent)">
-                        "WordLens"
+                        "WordLens AI"
                     </h1>
                     <p class="text-[0.68rem] mt-0.5 leading-none"
                         style="color:var(--text-secondary)">
-                        "Understand anything · multiple perspectives"
+                        {move || format!("{} lens · {}", active_lens.get().label(), active_lens.get().tagline())}
                     </p>
                 </div>
                 <span class="text-[0.6rem] font-bold tracking-widest px-2.5 py-1 rounded-full uppercase shrink-0"
@@ -497,10 +497,7 @@ fn App() -> impl IntoView {
                             title=lens.tagline()
                         >
                             {lens_icon(lens)}
-                            <span class="hidden sm:inline">{lens.label()}</span>
-                            <span class="hidden lg:inline opacity-55 font-normal text-[0.7rem]">
-                                {format!("— {}", lens.tagline())}
-                            </span>
+                            <span>{lens.label()}</span>
                         </button>
                     }
                 }).collect_view()}
@@ -520,15 +517,15 @@ fn App() -> impl IntoView {
                             </div>
                         </div>
                         <div class="space-y-1.5">
-                            <p class="font-semibold text-[1rem] tracking-tight" style="color:var(--text-primary)">
-                                "Enter any word, concept, or idea"
+                            <p class="font-bold text-[1.08rem] tracking-tight" style="color:var(--text-primary)">
+                                "What would you like to understand?"
                             </p>
-                            <p class="text-xs leading-relaxed" style="color:var(--text-muted)">
-                                "Pick a lens above to shape how it's explained"
+                            <p class="text-sm leading-relaxed" style="color:var(--text-secondary)">
+                                "Type any word or concept — pick a lens to choose the style"
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2 justify-center mt-1">
-                            {["entropy", "democracy", "recursion", "love", "gravity"].iter().map(|&ex| {
+                            {["entropy", "democracy", "recursion", "love", "gravity", "consciousness", "irony"].iter().map(|&ex| {
                                 view! {
                                     <button
                                         class="px-3.5 py-1.5 rounded-full text-xs font-medium border hover:-translate-y-0.5 hover:shadow-sm transition-all duration-200 italic"
@@ -560,9 +557,9 @@ fn App() -> impl IntoView {
                             )>
                                 // Lens badge
                                 {lens.map(|l| view! {
-                                    <div class="flex items-center gap-1 mb-1.5 px-1">
-                                        <span class="flex items-center gap-1 text-[0.62rem] font-bold uppercase tracking-widest"
-                                            style="color:var(--badge-text)">
+                                    <div class="flex items-center gap-1 mb-1.5">
+                                        <span class="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full"
+                                            style="color:var(--badge-text);background:var(--badge-bg)">
                                             {lens_icon(l)}
                                             {l.label()}
                                         </span>
@@ -572,7 +569,7 @@ fn App() -> impl IntoView {
                                 // Bubble
                                 <div
                                     class=move || {
-                                        let base = "px-4 py-3 leading-relaxed text-[0.91rem] break-words whitespace-pre-wrap";
+                                        let base = "px-4 py-3 leading-relaxed text-[0.94rem] break-words whitespace-pre-wrap";
                                         if is_user {
                                             format!("{base} rounded-2xl rounded-br-sm")
                                         } else {
@@ -623,14 +620,14 @@ fn App() -> impl IntoView {
                     <div class="flex items-center gap-1.5 text-[0.68rem] font-bold rounded-full px-2.5 py-1 shrink-0 select-none"
                         style="color:var(--badge-text);background:var(--badge-bg)">
                         {move || lens_icon(active_lens.get())}
-                        <span class="hidden sm:inline">{move || active_lens.get().label()}</span>
+                        <span>{move || active_lens.get().label()}</span>
                     </div>
 
                     <input
                         class="flex-1 bg-transparent border-none outline-none text-[0.91rem] placeholder:opacity-40 min-w-0"
                         style="color:var(--text-primary)"
                         type="text"
-                        placeholder="Enter a word or concept…"
+                        placeholder="Type a word or concept…"
                         prop:value=move || input.get()
                         on:input=move |e| {
                             use wasm_bindgen::JsCast;
@@ -664,6 +661,12 @@ fn App() -> impl IntoView {
                         }}
                     </button>
                 </div>
+
+                // Keyboard hint
+                <p class="text-[0.63rem] text-right select-none -mt-1"
+                    style="color:var(--text-muted)">
+                    "Press Enter to send"
+                </p>
 
                 // Secondary actions
                 {move || has_responses().then(|| view! {
