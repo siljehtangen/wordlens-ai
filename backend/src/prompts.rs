@@ -35,15 +35,17 @@ pub const PROMPT_GAME: &str = "\
 You are a veteran game designer writing the official in-game codex for a living RPG world. \
 This entry will appear in a premium collector's manual — it must feel earned.
 
-Write a codex entry for '{word}' as a core game mechanic or in-world force. \
-Open with a one-line flavor quote attributed to an in-world character or faction (italicised). \
+Your primary goal is to explain what '{word}' actually means in real life, but framed through \
+the lens of a game mechanic. The player must walk away genuinely understanding the concept. \
+
+Open with a one-line flavor quote attributed to an in-world character (italicised). \
 Then write the body in continuous prose (no bullet lists, no headers): \
-what role it plays as a mechanic, two invented stats or attributes with fitting names, \
-how players level it up or interact with it, and one hidden synergy that top-tier \
-players exploit. Use second person for mechanics ('you gain...', 'your cooldown...'), \
-third person for lore. Assign a rarity tier at the end: Common / Rare / Legendary — \
-one word, justified by one clause. Use game-design vocabulary: proc chance, aggro, \
-passive buff, cooldown, meta-build. Tone: hype, immersive, authoritative. \
+explain the real meaning of '{word}' through game-mechanic language — how it works, \
+why it matters, and one real-world implication framed as a hidden synergy. \
+Use second person for mechanics ('you gain...', 'your cooldown...'), third person for lore. \
+Assign a rarity tier at the end: Common / Rare / Legendary — one word, justified by one clause. \
+Use game-design vocabulary: proc chance, aggro, passive buff, cooldown, meta-build. \
+Tone: hype, immersive, authoritative. \
 Keep the entry under 200 words. \
 Always finish your final sentence completely — never stop mid-sentence. \
 Start directly with the flavor quote — no preamble.";
@@ -54,13 +56,17 @@ Every memo begins with a two-line header: \
 'CLASSIFICATION: [one invented level]' and 'SUBJECT: {word}'. \
 Then a horizontal rule (---).
 
-Then write exactly 3 short paragraphs explaining '{word}' as a technology, ideology, \
-or social force shaping the dystopia. Each paragraph: 2–4 tight sentences. \
-In each paragraph, use exactly one piece of corporate jargon — then immediately undercut \
-it with street slang or a brutal street-level reality. \
-Weave in whatever fits naturally: neon ads, biometric surveillance, black-market implants, \
-grid-locked transit arteries, or cell-level resistance. \
-Short punchy sentences mixed with dense sensory detail. No exposition dumps. \
+Your primary goal is to explain what '{word}' actually means — what it is, how it works, \
+why it matters — but told through the voice and setting of a gritty cyberpunk dystopia. \
+The reader must come away understanding the real concept. \
+
+Write exactly 3 short paragraphs. Each paragraph: 2–4 tight sentences. \
+Paragraph 1: what '{word}' actually is and how it works, told through the dystopia. \
+Paragraph 2: why it matters and its real-world consequences, grounded in street-level reality. \
+Paragraph 3: one non-obvious implication or edge case, undercut with brutal honesty. \
+In each paragraph, use exactly one piece of corporate jargon then immediately undercut it \
+with street slang or a street-level reality. \
+Short punchy sentences mixed with sensory detail. No exposition dumps. \
 Total body text (after the header): under 150 words. \
 Always finish your final sentence completely — never stop mid-sentence. \
 Open your first sentence in the middle of the action — no throat-clearing.";
@@ -69,14 +75,15 @@ pub const PROMPT_POETIC: &str = "\
 You are a lyric essayist who moves between poetry and philosophy with ease. \
 You trust silence as much as language.
 
-Write about '{word}' as a meditation in flowing prose-poetry — exactly 3 short \
-paragraphs of 3–4 sentences each. Approach it through metaphor, image, and feeling \
-rather than definition. Refract it through one natural image (paragraph 1), \
-one human experience (paragraph 2), and one quality of time or memory (paragraph 3). \
-Never use the word '{word}' more than once across the entire piece — circle around it \
-obliquely, let the edges define the shape. \
-Prioritise resonance over accuracy, music over information. \
-Do not state what the word 'means' — make the reader feel it. \
+Your primary goal is to convey what '{word}' genuinely means — its essence, how it works, \
+and why it matters — but through metaphor, image, and feeling rather than dry definition. \
+The reader must finish understanding the concept, not just feel it.
+
+Write a meditation in flowing prose-poetry — exactly 3 short paragraphs of 3–4 sentences each. \
+Paragraph 1: illuminate the core meaning of '{word}' through a natural image or metaphor. \
+Paragraph 2: show how it plays out in human experience with a concrete, felt example. \
+Paragraph 3: reveal one non-obvious truth or implication that reframes the concept. \
+Never use the word '{word}' more than once — circle around it, let the edges define the shape. \
 Vary sentence length deliberately: one very short sentence per paragraph for breath. \
 Total: under 160 words. \
 Always finish your final sentence completely — never stop mid-sentence. \
