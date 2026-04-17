@@ -12,8 +12,11 @@ use futures::StreamExt;
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{
+    compression::CompressionLayer,
+    cors::{Any, CorsLayer},
+    services::{ServeDir, ServeFile},
+};
 use tracing::{error, info, warn};
 
 mod history;
@@ -22,15 +25,18 @@ mod prompts;
 use history::History;
 
 const MAX_WORD_LEN: usize = 200;
+const MAX_BODY_BYTES: usize = 8 * 1024; // 8 KB — explain payloads are tiny
 const VALID_LENSES: &[&str] = &["simple", "learning", "game", "cyberpunk", "poetic"];
 const CACHE_MAX_CAPACITY: u64 = 500;
+const OLLAMA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct AppState {
     http: reqwest::Client,
-    ollama_url: String,
+    ollama_generate_url: String, // pre-built once at startup
+    model: String,               // read once at startup
     cache: Cache<(String, String), String>,
     history: Arc<History>,
 }
@@ -50,7 +56,9 @@ struct HistoryQuery {
     #[serde(default = "default_limit")]
     limit: usize,
 }
-fn default_limit() -> usize { 20 }
+fn default_limit() -> usize {
+    20
+}
 
 #[derive(Debug, Serialize)]
 struct ExplainResponse {
@@ -63,6 +71,15 @@ struct ExplainResponse {
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
+}
+
+/// Typed shape of a single Ollama streaming chunk.
+#[derive(Deserialize)]
+struct OllamaChunk {
+    #[serde(default)]
+    response: String,
+    #[serde(default)]
+    done: bool,
 }
 
 // ── Validation & prompt ───────────────────────────────────────────────────────
@@ -98,13 +115,29 @@ fn build_prompt(word: &str, lens: &str) -> String {
     template.replace("{word}", word)
 }
 
-fn ollama_body(prompt: &str, stream: bool) -> serde_json::Value {
-    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
+fn lens_token_limit(lens: &str) -> u32 {
+    match lens {
+        "simple"    => 110,
+        "learning"  => 360,
+        "game"      => 280,
+        "cyberpunk" => 200,
+        "poetic"    => 230,
+        _           => 220,
+    }
+}
+
+fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "prompt": prompt,
         "stream": stream,
-        "options": { "num_predict": 200, "num_ctx": 1024, "temperature": 0.7 }
+        "options": {
+            "num_predict": num_predict,
+            "num_ctx": 512,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1
+        }
     })
 }
 
@@ -157,7 +190,6 @@ async fn explain_json(
     let lens = payload.lens.clone();
     let cache_key = (word.clone(), lens.clone());
 
-    // Cache hit
     if let Some(cached) = state.cache.get(&cache_key).await {
         info!(word = %word, lens = %lens, "cache hit");
         return Ok(JsonResponse(ExplainResponse {
@@ -169,13 +201,13 @@ async fn explain_json(
     }
 
     let prompt = build_prompt(&payload.word, &payload.lens);
-    let body = ollama_body(&prompt, false);
+    let body = ollama_body(&state.model, &prompt, false, lens_token_limit(&payload.lens));
 
     let resp = state
         .http
-        .post(format!("{}/api/generate", state.ollama_url))
+        .post(&state.ollama_generate_url)
         .json(&body)
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(OLLAMA_TIMEOUT)
         .send()
         .await
         .map_err(|e| {
@@ -186,7 +218,7 @@ async fn explain_json(
                     error: format!(
                         "Cannot reach Ollama at {}. \
                          Make sure Ollama is running with `ollama serve`. Error: {e}",
-                        state.ollama_url
+                        state.ollama_generate_url
                     ),
                 }),
             )
@@ -217,7 +249,6 @@ async fn explain_json(
         .trim()
         .to_string();
 
-    // Populate cache and history
     state.cache.insert(cache_key, explanation.clone()).await;
     state.history.push(word, lens.clone(), &explanation);
 
@@ -233,17 +264,31 @@ async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
 ) -> Result<
-    Sse<impl futures::Stream<Item = Result<Event, axum::Error>>>,
+    Sse<futures::stream::BoxStream<'static, Result<Event, axum::Error>>>,
     (StatusCode, JsonResponse<ErrorResponse>),
 > {
+    let word = payload.word.trim().to_lowercase();
+    let lens = payload.lens.clone();
+    let cache_key = (word.clone(), lens.clone());
+
+    // Cache hit: burst the full cached text as a single SSE event — no Ollama round-trip.
+    if let Some(cached) = state.cache.get(&cache_key).await {
+        info!(word = %word, lens = %lens, "stream cache hit");
+        let events: Vec<Result<Event, axum::Error>> = vec![
+            Ok(Event::default().data(cached)),
+            Ok(Event::default().event("done").data("")),
+        ];
+        return Ok(Sse::new(futures::stream::iter(events).boxed()).keep_alive(KeepAlive::default()));
+    }
+
     let prompt = build_prompt(&payload.word, &payload.lens);
-    let body = ollama_body(&prompt, true);
+    let body = ollama_body(&state.model, &prompt, true, lens_token_limit(&payload.lens));
 
     let resp = state
         .http
-        .post(format!("{}/api/generate", state.ollama_url))
+        .post(&state.ollama_generate_url)
         .json(&body)
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(OLLAMA_TIMEOUT)
         .send()
         .await
         .map_err(|e| {
@@ -256,44 +301,91 @@ async fn explain_stream(
             )
         })?;
 
-    // Collect tokens for history
-    let word = payload.word.trim().to_lowercase();
-    let lens = payload.lens.clone();
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        error!(%status, %body, "Ollama error (stream path)");
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            JsonResponse(ErrorResponse {
+                error: format!("Ollama returned HTTP {status}: {body}"),
+            }),
+        ));
+    }
+
     let history = Arc::clone(&state.history);
+    let cache = state.cache.clone();
     let mut full_text = String::new();
 
+    // Each reqwest chunk may contain one or more newline-delimited JSON objects.
+    // We split on newlines, parse each as OllamaChunk, and emit SSE events.
     let event_stream = resp
         .bytes_stream()
-        .map(move |chunk| {
-            let chunk = chunk.map_err(|e| {
-                error!(error = %e, "error reading Ollama stream chunk");
-            })?;
-            let line = std::str::from_utf8(&chunk).unwrap_or("").trim().to_string();
-            if line.is_empty() {
-                return Err(());
-            }
-            let json: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
-                error!(error = %e, raw = %line, "failed to parse chunk");
-            })?;
-            let token = json["response"].as_str().unwrap_or("").to_string();
-            let done = json["done"].as_bool().unwrap_or(false);
-            Ok((token, done))
-        })
-        .filter_map(|r| async move { r.ok() })
-        .flat_map(move |(token, done)| {
-            let mut events: Vec<Result<Event, axum::Error>> = Vec::new();
-            if !token.is_empty() {
-                full_text.push_str(&token);
-                events.push(Ok(Event::default().data(token)));
-            }
-            if done {
-                history.push(word.clone(), lens.clone(), &full_text);
-                events.push(Ok(Event::default().event("done").data("")));
-            }
+        .flat_map(move |chunk| {
+            let bytes = match chunk {
+                Ok(b) => b,
+                Err(e) => {
+                    error!(error = %e, "error reading Ollama stream chunk");
+                    return futures::stream::iter(vec![]);
+                }
+            };
+
+            let events: Vec<Result<Event, axum::Error>> = std::str::from_utf8(&bytes)
+                .unwrap_or("")
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .filter_map(|line| serde_json::from_str::<OllamaChunk>(line).ok())
+                .flat_map(|chunk| {
+                    let mut evs: Vec<Result<Event, axum::Error>> = Vec::new();
+                    if !chunk.response.is_empty() {
+                        full_text.push_str(&chunk.response);
+                        evs.push(Ok(Event::default().data(chunk.response)));
+                    }
+                    if chunk.done {
+                        history.push(word.clone(), lens.clone(), &full_text);
+                        let text = full_text.clone();
+                        let key = cache_key.clone();
+                        let cache = cache.clone();
+                        tokio::spawn(async move { cache.insert(key, text).await });
+                        evs.push(Ok(Event::default().event("done").data("")));
+                    }
+                    evs
+                })
+                .collect();
+
             futures::stream::iter(events)
-        });
+        })
+        .boxed();
 
     Ok(Sse::new(event_stream).keep_alive(KeepAlive::default()))
+}
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("shutdown signal received, draining connections");
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -307,10 +399,12 @@ async fn main() {
         )
         .init();
 
-    let ollama_url = std::env::var("OLLAMA_URL")
+    let ollama_base = std::env::var("OLLAMA_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
+    let ollama_generate_url = format!("{ollama_base}/api/generate");
 
-    info!("Using Ollama at {ollama_url}");
+    info!(%model, url = %ollama_generate_url, "Ollama config");
 
     let cache: Cache<(String, String), String> = Cache::builder()
         .max_capacity(CACHE_MAX_CAPACITY)
@@ -321,10 +415,11 @@ async fn main() {
         http: reqwest::Client::builder()
             .pool_max_idle_per_host(4)
             .build()
-            .expect("Failed to build HTTP client"),
-        ollama_url,
+            .expect("failed to build HTTP client"),
+        ollama_generate_url,
+        model,
         cache,
-        history: Arc::new(History::new()),
+        history: Arc::new(History::default()),
     });
 
     let cors = CorsLayer::new()
@@ -334,7 +429,7 @@ async fn main() {
 
     let frontend_dist = std::env::var("FRONTEND_DIST")
         .unwrap_or_else(|_| "../frontend/dist".to_string());
-    info!("Serving frontend from {frontend_dist}");
+    info!("serving frontend from {frontend_dist}");
 
     let serve_dir = ServeDir::new(&frontend_dist)
         .not_found_service(ServeFile::new(format!("{frontend_dist}/index.html")));
@@ -344,16 +439,25 @@ async fn main() {
         .route("/api/explain", post(explain))
         .route("/api/history", get(get_history))
         .with_state(state)
+        // Innermost: cap request body before it reaches handlers
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
+        // Compress responses (gzip/deflate) — free bandwidth win
+        .layer(CompressionLayer::new())
+        // Outermost: CORS headers on every response including errors
         .layer(cors)
         .fallback_service(serve_dir);
 
     let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| {
-        eprintln!("ERROR: Failed to bind to {addr}: {e}");
+        eprintln!("ERROR: failed to bind to {addr}: {e}");
         std::process::exit(1);
     });
 
     info!("WordLens backend listening on http://{addr}");
-    axum::serve(listener, app).await.unwrap();
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("server error");
 }

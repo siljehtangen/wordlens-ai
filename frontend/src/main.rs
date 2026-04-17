@@ -234,6 +234,18 @@ async fn stream_explain(
     messages: RwSignal<Vec<Message>>,
     loading: WriteSignal<bool>,
 ) {
+    // Add placeholder immediately so errors are visible in the chat
+    messages.update(|v| {
+        v.push(Message {
+            id: reply_id.clone(),
+            role: Role::Assistant,
+            content: String::new(),
+            lens: Some(lens),
+            streaming: true,
+        });
+    });
+    loading.set(false);
+
     let body = json!({ "word": word, "lens": lens.id(), "stream": true }).to_string();
 
     let headers = Headers::new().unwrap();
@@ -249,14 +261,16 @@ async fn stream_explain(
         Ok(r) => r,
         Err(e) => {
             push_error(&messages, &reply_id, &format!("{e:?}"));
-            loading.set(false);
             return;
         }
     };
 
     let window = match web_sys::window() {
         Some(w) => w,
-        None => return,
+        None => {
+            finish_streaming(&messages, &reply_id);
+            return;
+        }
     };
 
     let resp_val = match JsFuture::from(window.fetch_with_request(&request)).await {
@@ -268,7 +282,6 @@ async fn stream_explain(
                 "Could not reach the WordLens backend. Is `cargo run` running on port 3001?",
             );
             web_sys::console::error_1(&e);
-            loading.set(false);
             return;
         }
     };
@@ -281,21 +294,8 @@ async fn stream_explain(
             &reply_id,
             &format!("Server error {}", resp.status()),
         );
-        loading.set(false);
         return;
     }
-
-    // Add placeholder streaming message
-    messages.update(|v| {
-        v.push(Message {
-            id: reply_id.clone(),
-            role: Role::Assistant,
-            content: String::new(),
-            lens: Some(lens),
-            streaming: true,
-        });
-    });
-    loading.set(false);
 
     let raw_body = match resp.body() {
         Some(b) => b,

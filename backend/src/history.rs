@@ -15,11 +15,13 @@ pub struct HistoryEntry {
 
 pub struct History(RwLock<VecDeque<HistoryEntry>>);
 
-impl History {
-    pub fn new() -> Self {
+impl Default for History {
+    fn default() -> Self {
         Self(RwLock::new(VecDeque::with_capacity(MAX_ENTRIES)))
     }
+}
 
+impl History {
     pub fn push(&self, word: String, lens: String, explanation: &str) {
         let snippet = explanation.chars().take(120).collect::<String>();
         let entry = HistoryEntry {
