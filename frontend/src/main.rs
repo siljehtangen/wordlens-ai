@@ -214,7 +214,10 @@ fn parse_sse_chunk(buffer: &mut String, new_data: &str) -> Vec<(String, bool)> {
             if let Some(s) = line.strip_prefix("event: ") {
                 event_type = s.trim().to_string();
             } else if let Some(s) = line.strip_prefix("data: ") {
-                data = s.to_string();
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str(s);
             }
         }
 
