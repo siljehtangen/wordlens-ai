@@ -64,6 +64,15 @@ impl Lens {
             Lens::Poetic,
         ]
     }
+    fn index(self) -> usize {
+        match self {
+            Lens::Simple => 0,
+            Lens::Learning => 1,
+            Lens::Game => 2,
+            Lens::Cyberpunk => 3,
+            Lens::Poetic => 4,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -354,13 +363,14 @@ fn App() -> impl IntoView {
     let (input, set_input) = signal(String::new());
     let (active_lens, set_active_lens) = signal(Lens::Simple);
     let (loading, set_loading) = signal(false);
-    let messages: RwSignal<Vec<Message>> = RwSignal::new(Vec::new());
+    let messages_per_lens: [RwSignal<Vec<Message>>; 5] =
+        std::array::from_fn(|_| RwSignal::new(Vec::new()));
 
     // Auto-scroll anchor
     let messages_end = NodeRef::<leptos::html::Div>::new();
 
     Effect::new(move |_| {
-        let _ = messages.get(); // track any message change
+        let _ = messages_per_lens[active_lens.get().index()].get(); // track current lens messages
         if let Some(el) = messages_end.get() {
             el.scroll_into_view();
         }
@@ -376,6 +386,9 @@ fn App() -> impl IntoView {
         let base = Uuid::new_v4().to_string();
         let reply_id = format!("{base}-reply");
 
+        let lens = active_lens.get_untracked();
+        let messages = messages_per_lens[lens.index()];
+
         messages.update(|v| {
             v.push(Message {
                 id: format!("{base}-user"),
@@ -388,7 +401,6 @@ fn App() -> impl IntoView {
         set_input.set(String::new());
         set_loading.set(true);
 
-        let lens = active_lens.get_untracked();
         leptos::task::spawn_local(stream_explain(
             word,
             lens,
@@ -400,6 +412,8 @@ fn App() -> impl IntoView {
 
     // ── regenerate ────────────────────────────────────────────────────────────
     let regenerate = move || {
+        let lens = active_lens.get_untracked();
+        let messages = messages_per_lens[lens.index()];
         let msgs = messages.get_untracked();
         let last_user = msgs.iter().rev().find(|m| m.role == Role::User).cloned();
         if let Some(u) = last_user {
@@ -418,7 +432,6 @@ fn App() -> impl IntoView {
                 }
             });
             set_loading.set(true);
-            let lens = active_lens.get_untracked();
             leptos::task::spawn_local(stream_explain(
                 word,
                 lens,
@@ -430,7 +443,7 @@ fn App() -> impl IntoView {
     };
 
     let has_responses =
-        move || messages.get().iter().any(|m| m.role == Role::Assistant);
+        move || messages_per_lens[active_lens.get().index()].get().iter().any(|m| m.role == Role::Assistant);
 
     view! {
         <Title text="WordLens AI"/>
@@ -502,7 +515,7 @@ fn App() -> impl IntoView {
                 style="background:var(--bg-primary)">
 
                 // Empty state
-                {move || (messages.get().is_empty()).then(|| view! {
+                {move || (messages_per_lens[active_lens.get().index()].get().is_empty()).then(|| view! {
                     <div class="flex-1 flex flex-col items-center justify-center gap-5 px-4 py-16 text-center select-none">
                         <div class="relative flex items-center justify-center w-20 h-20">
                             <div class="ambient-circle"/>
@@ -536,7 +549,7 @@ fn App() -> impl IntoView {
 
                 // Messages
                 <For
-                    each=move || messages.get()
+                    each=move || messages_per_lens[active_lens.get().index()].get()
                     key=|m| m.id.clone()
                     children=move |msg| {
                         let is_user = msg.role == Role::User;
@@ -677,7 +690,7 @@ fn App() -> impl IntoView {
                         <button
                             class="flex items-center gap-1.5 text-[0.72rem] font-medium px-3 py-1.5 rounded-full border hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all duration-200"
                             style="color:var(--text-secondary);border-color:var(--bot-border)"
-                            on:click=move |_| messages.update(|v| v.clear())
+                            on:click=move |_| messages_per_lens[active_lens.get_untracked().index()].update(|v| v.clear())
                         >
                             {icon_trash()}
                             "Clear"
