@@ -117,12 +117,12 @@ fn build_prompt(word: &str, lens: &str) -> String {
 
 fn lens_token_limit(lens: &str) -> u32 {
     match lens {
-        "simple"    => 110,
-        "learning"  => 360,
-        "game"      => 280,
-        "cyberpunk" => 200,
-        "poetic"    => 230,
-        _           => 220,
+        "simple"    => 180,
+        "learning"  => 520,
+        "game"      => 420,
+        "cyberpunk" => 320,
+        "poetic"    => 360,
+        _           => 320,
     }
 }
 
@@ -133,7 +133,7 @@ fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) -> ser
         "stream": stream,
         "options": {
             "num_predict": num_predict,
-            "num_ctx": 512,
+            "num_ctx": 2048,
             "temperature": 0.7,
             "top_p": 0.9,
             "repeat_penalty": 1.1

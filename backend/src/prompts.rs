@@ -10,6 +10,7 @@ Avoid all jargon; if a technical word is unavoidable, immediately swap it for a 
 No bullet points, no headers. \
 End with a single sentence that makes the concept feel surprising or worth caring about. \
 Total response: 55–75 words. \
+Always finish your final sentence completely — never stop mid-sentence. \
 Begin your first word directly — no 'Sure!', 'Great question!', or any preamble.";
 
 pub const PROMPT_LEARNING: &str = "\
@@ -27,6 +28,7 @@ Write in clear, flowing prose. No bullet lists, no headers. Each paragraph shoul
 naturally into the next — use a bridging idea or contrast, not a hard stop. \
 Use precise vocabulary but define any technical term the first time you use it. \
 Total response: 200–260 words. \
+Always finish your final sentence completely — never stop mid-sentence. \
 Begin your first paragraph directly — no preamble or restating the word as a title.";
 
 pub const PROMPT_GAME: &str = "\
@@ -43,6 +45,7 @@ third person for lore. Assign a rarity tier at the end: Common / Rare / Legendar
 one word, justified by one clause. Use game-design vocabulary: proc chance, aggro, \
 passive buff, cooldown, meta-build. Tone: hype, immersive, authoritative. \
 Keep the entry under 200 words. \
+Always finish your final sentence completely — never stop mid-sentence. \
 Start directly with the flavor quote — no preamble.";
 
 pub const PROMPT_CYBERPUNK: &str = "\
@@ -59,6 +62,7 @@ Weave in whatever fits naturally: neon ads, biometric surveillance, black-market
 grid-locked transit arteries, or cell-level resistance. \
 Short punchy sentences mixed with dense sensory detail. No exposition dumps. \
 Total body text (after the header): under 150 words. \
+Always finish your final sentence completely — never stop mid-sentence. \
 Open your first sentence in the middle of the action — no throat-clearing.";
 
 pub const PROMPT_POETIC: &str = "\
@@ -75,4 +79,5 @@ Prioritise resonance over accuracy, music over information. \
 Do not state what the word 'means' — make the reader feel it. \
 Vary sentence length deliberately: one very short sentence per paragraph for breath. \
 Total: under 160 words. \
+Always finish your final sentence completely — never stop mid-sentence. \
 Begin mid-image, as if the meditation is already in motion.";
