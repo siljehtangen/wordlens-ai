@@ -70,9 +70,9 @@ impl Lens {
 struct Message {
     id: String,
     role: Role,
-    content: String,
+    content: RwSignal<String>,
     lens: Option<Lens>,
-    streaming: bool,
+    streaming: RwSignal<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -235,13 +235,15 @@ async fn stream_explain(
     loading: WriteSignal<bool>,
 ) {
     // Add placeholder immediately so errors are visible in the chat
+    let content_sig = RwSignal::new(String::new());
+    let streaming_sig = RwSignal::new(true);
     messages.update(|v| {
         v.push(Message {
             id: reply_id.clone(),
             role: Role::Assistant,
-            content: String::new(),
+            content: content_sig,
             lens: Some(lens),
-            streaming: true,
+            streaming: streaming_sig,
         });
     });
     loading.set(false);
@@ -260,7 +262,7 @@ async fn stream_explain(
     let request = match Request::new_with_str_and_init("/api/explain", &opts) {
         Ok(r) => r,
         Err(e) => {
-            push_error(&messages, &reply_id, &format!("{e:?}"));
+            push_error(content_sig, streaming_sig, &format!("{e:?}"));
             return;
         }
     };
@@ -268,7 +270,7 @@ async fn stream_explain(
     let window = match web_sys::window() {
         Some(w) => w,
         None => {
-            finish_streaming(&messages, &reply_id);
+            finish_streaming(streaming_sig);
             return;
         }
     };
@@ -277,8 +279,8 @@ async fn stream_explain(
         Ok(v) => v,
         Err(e) => {
             push_error(
-                &messages,
-                &reply_id,
+                content_sig,
+                streaming_sig,
                 "Could not reach the WordLens backend. Is `cargo run` running on port 3001?",
             );
             web_sys::console::error_1(&e);
@@ -290,8 +292,8 @@ async fn stream_explain(
 
     if !resp.ok() {
         push_error(
-            &messages,
-            &reply_id,
+            content_sig,
+            streaming_sig,
             &format!("Server error {}", resp.status()),
         );
         return;
@@ -300,7 +302,7 @@ async fn stream_explain(
     let raw_body = match resp.body() {
         Some(b) => b,
         None => {
-            finish_streaming(&messages, &reply_id);
+            finish_streaming(streaming_sig);
             return;
         }
     };
@@ -323,33 +325,21 @@ async fn stream_explain(
                 break 'outer;
             }
             if !token.is_empty() {
-                messages.update(|v| {
-                    if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
-                        m.content.push_str(&token);
-                    }
-                });
+                content_sig.update(|c| c.push_str(&token));
             }
         }
     }
 
-    finish_streaming(&messages, &reply_id);
+    finish_streaming(streaming_sig);
 }
 
-fn push_error(messages: &RwSignal<Vec<Message>>, reply_id: &str, err: &str) {
-    messages.update(|v| {
-        if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
-            m.content = err.to_string();
-            m.streaming = false;
-        }
-    });
+fn push_error(content_sig: RwSignal<String>, streaming_sig: RwSignal<bool>, err: &str) {
+    content_sig.set(err.to_string());
+    streaming_sig.set(false);
 }
 
-fn finish_streaming(messages: &RwSignal<Vec<Message>>, reply_id: &str) {
-    messages.update(|v| {
-        if let Some(m) = v.iter_mut().find(|m| m.id == reply_id) {
-            m.streaming = false;
-        }
-    });
+fn finish_streaming(streaming_sig: RwSignal<bool>) {
+    streaming_sig.set(false);
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -387,9 +377,9 @@ fn App() -> impl IntoView {
             v.push(Message {
                 id: format!("{base}-user"),
                 role: Role::User,
-                content: word.clone(),
+                content: RwSignal::new(word.clone()),
                 lens: None,
-                streaming: false,
+                streaming: RwSignal::new(false),
             });
         });
         set_input.set(String::new());
@@ -412,9 +402,10 @@ fn App() -> impl IntoView {
         if let Some(u) = last_user {
             let idx = msgs.iter().rposition(|m| m.id == u.id).unwrap_or(0);
             messages.update(|v| v.truncate(idx + 1));
-            set_input.set(u.content.clone());
+            let word = u.content.get_untracked();
+            set_input.set(word.clone());
             // re-trigger send on next microtask
-            let word = u.content;
+            let word = word;
             let base = Uuid::new_v4().to_string();
             let reply_id = format!("{base}-reply");
             messages.update(|v| {
@@ -547,8 +538,8 @@ fn App() -> impl IntoView {
                     children=move |msg| {
                         let is_user = msg.role == Role::User;
                         let lens = msg.lens;
-                        let streaming = msg.streaming;
-                        let content = msg.content.clone();
+                        let content_sig = msg.content;
+                        let streaming_sig = msg.streaming;
 
                         view! {
                             <div class=move || format!(
@@ -584,8 +575,8 @@ fn App() -> impl IntoView {
                                         }
                                     }
                                 >
-                                    {content}
-                                    {streaming.then(|| view! {
+                                    {move || content_sig.get()}
+                                    {move || streaming_sig.get().then(|| view! {
                                         <span class="cursor ml-0.5" aria-hidden="true">"▌"</span>
                                     })}
                                 </div>
