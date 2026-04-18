@@ -38,3 +38,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "js"] }
 console_error_panic_hook = "0.1"
+
+lucide-leptos = { version = "0.3", features = [
+    "Eye", "Send", "RefreshCw", "Trash2", "Info", "X", "Sparkles",
+    "BookOpen", "GraduationCap", "Gamepad2", "Cpu", "Feather",
+] }
