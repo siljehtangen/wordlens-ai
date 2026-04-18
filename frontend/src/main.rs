@@ -141,6 +141,29 @@ fn icon_trash() -> impl IntoView {
     }
 }
 
+fn icon_info() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4"/>
+            <path d="M12 8h.01"/>
+        </svg>
+    }
+}
+
+fn icon_close() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18"/>
+            <path d="m6 6 12 12"/>
+        </svg>
+    }
+}
+
 fn icon_sparkles() -> impl IntoView {
     view! {
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24"
@@ -363,6 +386,7 @@ fn App() -> impl IntoView {
     let (input, set_input) = signal(String::new());
     let (active_lens, set_active_lens) = signal(Lens::Simple);
     let (loading, set_loading) = signal(false);
+    let (show_info, set_show_info) = signal(false);
     let messages_per_lens: [RwSignal<Vec<Message>>; 5] =
         std::array::from_fn(|_| RwSignal::new(Vec::new()));
 
@@ -474,6 +498,15 @@ fn App() -> impl IntoView {
                     style="background:var(--accent-light);color:var(--accent)">
                     "AI"
                 </span>
+                <button
+                    class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border transition-all duration-200 hover:scale-105 active:scale-95"
+                    style="color:var(--text-muted);border-color:var(--bot-border);background:transparent"
+                    on:click=move |_| set_show_info.set(true)
+                    aria-label="About WordLens AI"
+                    title="About WordLens AI"
+                >
+                    {icon_info()}
+                </button>
             </header>
 
             // ── Lens selector ─────────────────────────────────────────────────
@@ -698,6 +731,99 @@ fn App() -> impl IntoView {
                     </div>
                 })}
             </footer>
+            // ── Info modal ────────────────────────────────────────────────────
+            {move || show_info.get().then(|| view! {
+                <div
+                    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    style="background:rgba(0,0,0,0.55);backdrop-filter:blur(4px)"
+                    on:click=move |e| {
+                        use wasm_bindgen::JsCast;
+                        if let Some(target) = e.target() {
+                            if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
+                                if el.class_name().contains("inset-0") {
+                                    set_show_info.set(false);
+                                }
+                            }
+                        }
+                    }
+                >
+                    <div
+                        class="relative w-full max-w-md rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[85dvh]"
+                        style="background:var(--bg-secondary);border:1px solid var(--bot-border)"
+                    >
+                        // Close button
+                        <button
+                            class="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center border hover:opacity-70 transition-opacity"
+                            style="color:var(--text-muted);border-color:var(--bot-border)"
+                            on:click=move |_| set_show_info.set(false)
+                            aria-label="Close"
+                        >
+                            {icon_close()}
+                        </button>
+
+                        // Title
+                        <h2 class="text-base font-bold mb-1" style="color:var(--accent)">
+                            "About WordLens AI"
+                        </h2>
+                        <p class="text-sm leading-relaxed mb-5" style="color:var(--text-secondary)">
+                            "WordLens AI helps you understand any word, concept, or idea by explaining it through different styles and perspectives — powered by a local AI model. Just type something and pick a lens."
+                        </p>
+
+                        // Lenses
+                        <h3 class="text-[0.7rem] font-bold uppercase tracking-widest mb-3" style="color:var(--text-muted)">
+                            "The Lenses"
+                        </h3>
+                        <ul class="flex flex-col gap-3">
+                            <li class="flex gap-3 items-start">
+                                <span class="mt-0.5 shrink-0 p-1.5 rounded-lg" style="background:var(--accent-light);color:var(--accent)">
+                                    {lens_icon(Lens::Simple)}
+                                </span>
+                                <div>
+                                    <p class="text-sm font-semibold leading-none mb-0.5" style="color:var(--text-primary)">"Simple"</p>
+                                    <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">"Short, plain-language explanations. Great when you just want a quick, clear answer without jargon."</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3 items-start">
+                                <span class="mt-0.5 shrink-0 p-1.5 rounded-lg" style="background:var(--accent-light);color:var(--accent)">
+                                    {lens_icon(Lens::Learning)}
+                                </span>
+                                <div>
+                                    <p class="text-sm font-semibold leading-none mb-0.5" style="color:var(--text-primary)">"Learning"</p>
+                                    <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">"Structured, educational breakdowns with context and examples. Perfect for studying or going deep on a topic."</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3 items-start">
+                                <span class="mt-0.5 shrink-0 p-1.5 rounded-lg" style="background:var(--accent-light);color:var(--accent)">
+                                    {lens_icon(Lens::Game)}
+                                </span>
+                                <div>
+                                    <p class="text-sm font-semibold leading-none mb-0.5" style="color:var(--text-primary)">"Game"</p>
+                                    <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">"Explains concepts as if they were game mechanics — fun, energetic, and full of analogies from gaming culture."</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3 items-start">
+                                <span class="mt-0.5 shrink-0 p-1.5 rounded-lg" style="background:var(--accent-light);color:var(--accent)">
+                                    {lens_icon(Lens::Cyberpunk)}
+                                </span>
+                                <div>
+                                    <p class="text-sm font-semibold leading-none mb-0.5" style="color:var(--text-primary)">"Cyberpunk"</p>
+                                    <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">"Dark, futuristic, and tech-noir. Concepts reframed through a dystopian sci-fi lens for a moody, immersive vibe."</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3 items-start">
+                                <span class="mt-0.5 shrink-0 p-1.5 rounded-lg" style="background:var(--accent-light);color:var(--accent)">
+                                    {lens_icon(Lens::Poetic)}
+                                </span>
+                                <div>
+                                    <p class="text-sm font-semibold leading-none mb-0.5" style="color:var(--text-primary)">"Poetic"</p>
+                                    <p class="text-xs leading-relaxed" style="color:var(--text-secondary)">"Lyrical, metaphor-rich descriptions that paint a picture. Ideal when you want to feel the meaning, not just know it."</p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            })}
+
         </div>
     }
 }
