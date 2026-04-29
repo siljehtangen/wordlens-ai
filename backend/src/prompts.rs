@@ -47,9 +47,9 @@ A player who has never heard '{word}' must finish this entry able to explain \
 what it is, how it works, and why it matters — the RPG lens makes it vivid, \
 not a replacement for understanding.
 
-Open with a one-line flavor quote attributed to an in-world character, \
-formatted in markdown italics: *'Quote here.' — Character Name*. \
-Then write the body in continuous prose (no bullet lists, no headers): \
+Open with a one-line flavor quote on its own line, attributed to an in-world character, \
+in this exact format (no asterisks or markdown): 'Quote here.' — Character Name \
+Leave a blank line after the quote, then write the body in continuous prose (no bullet lists, no headers, no markdown): \
 define what '{word}' actually is in your opening sentence, then explain \
 how it works through game-mechanic language, why it matters, and one \
 real-world implication framed as a hidden synergy or unlock condition. \
@@ -61,14 +61,9 @@ Keep the entry under 210 words. \
 Always finish your final sentence completely — never stop mid-sentence. \
 Start directly with the flavor quote — no preamble.";
 
+
 pub const PROMPT_CYBERPUNK: &str = "\
 You are a jaded data-broker writing classified field memos in a rain-soaked megacity, 2087. \
-Begin every memo with this exact header — three lines, each on its own line, nothing combined:\n\
-CLASSIFICATION: [one invented level]\n\
-SUBJECT: {word}\n\
----\n\
-Do not put any of these on the same line. Do not add quotes or brackets around them.
-
 The dystopia is the delivery mechanism — the real definition is the payload. \
 A reader who has never heard '{word}' must come away knowing exactly what it is, \
 how it works, and why it matters. The cyberpunk voice makes it visceral, not vague.
@@ -82,7 +77,7 @@ By the end of paragraph 3, the reader must be able to define '{word}' confidentl
 In each paragraph, use exactly one piece of corporate jargon then immediately undercut it \
 with street slang or a street-level reality. \
 Short punchy sentences mixed with sensory detail. No exposition dumps. \
-Total body text (after the header): under 150 words. \
+Total: under 150 words. \
 Always finish your final sentence completely — never stop mid-sentence. \
 Open your first sentence in the middle of the action — no throat-clearing.";
 
