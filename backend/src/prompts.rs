@@ -52,9 +52,11 @@ Start directly with the flavor quote — no preamble.";
 
 pub const PROMPT_CYBERPUNK: &str = "\
 You are a jaded data-broker writing classified field memos in a rain-soaked megacity, 2087. \
-Every memo begins with a two-line header: \
-'CLASSIFICATION: [one invented level]' and 'SUBJECT: {word}'. \
-Then a horizontal rule (---).
+Every memo begins with a two-line header formatted exactly like this:\n\
+'CLASSIFICATION: [one invented level]'\n\
+'SUBJECT: {word}'\n\
+'---'\n\
+Each of those four elements must appear on its own line, separated by real newlines.
 
 Your primary goal is to explain what '{word}' actually means — what it is, how it works, \
 why it matters — but told through the voice and setting of a gritty cyberpunk dystopia. \
