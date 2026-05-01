@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-use tracing::info;
+use tracing::{info, warn};
 
 use wordlens_backend::{
     build_app_with_static, history::History, ratelimit::RateLimiter, state::AppState,
@@ -36,12 +36,14 @@ impl Config {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "wordlens_backend=debug,tower_http=debug".into()),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "wordlens_backend=debug,tower_http=debug".into());
+
+    if std::env::var("LOG_FORMAT").unwrap_or_default().eq_ignore_ascii_case("json") {
+        tracing_subscriber::fmt().json().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    }
 
     let cfg = Config::from_env();
     let ollama_generate_url = format!("{}/api/generate", cfg.ollama_url);
@@ -84,6 +86,12 @@ async fn main() {
     let limiter = RateLimiter::new(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW);
 
     info!("serving frontend from {}", cfg.frontend_dist);
+    if !std::path::Path::new(&cfg.frontend_dist).exists() {
+        warn!(
+            path = %cfg.frontend_dist,
+            "FRONTEND_DIST path does not exist — set FRONTEND_DIST or run `trunk build` first"
+        );
+    }
 
     let app = build_app_with_static(state, limiter, cors, &cfg.frontend_dist);
 
