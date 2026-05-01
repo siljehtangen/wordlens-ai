@@ -38,10 +38,12 @@ pub fn InputBar(
                     prop:value=move || input.get()
                     on:input=move |e| {
                         use wasm_bindgen::JsCast;
-                        let val = e.target().unwrap()
-                            .unchecked_into::<web_sys::HtmlInputElement>()
-                            .value();
-                        set_input.set(val);
+                        if let Some(target) = e.target() {
+                            let val = target
+                                .unchecked_into::<web_sys::HtmlInputElement>()
+                                .value();
+                            set_input.set(val);
+                        }
                     }
                     on:keydown=move |e| {
                         if e.key() == "Enter" && !e.shift_key() {
