@@ -35,7 +35,7 @@ pub async fn explain(
     Json(payload): Json<ExplainRequest>,
 ) -> impl IntoResponse {
     if let Err(e) = validate_request(&payload) {
-        warn!(word = %payload.word, lens = %payload.lens, error = %e, "invalid request");
+        warn!(word = %payload.word, lens = ?payload.lens, error = %e, "invalid request");
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             JsonResponse(ErrorResponse { error: e }),
@@ -45,7 +45,7 @@ pub async fn explain(
 
     info!(
         word = %payload.word.trim(),
-        lens = %payload.lens,
+        lens = ?payload.lens,
         stream = payload.stream,
         "explain request"
     );
@@ -62,11 +62,11 @@ async fn explain_json(
     payload: ExplainRequest,
 ) -> Result<JsonResponse<ExplainResponse>, (StatusCode, JsonResponse<ErrorResponse>)> {
     let word = payload.word.trim().to_lowercase();
-    let lens = payload.lens.clone();
-    let cache_key = (word.clone(), lens.clone());
+    let lens = payload.lens;
+    let cache_key = (word.clone(), lens);
 
     if let Some(cached) = state.cache.get(&cache_key).await {
-        info!(word = %word, lens = %lens, "cache hit");
+        info!(word = %word, lens = ?lens, "cache hit");
         return Ok(JsonResponse(ExplainResponse {
             explanation: cached,
             lens,
@@ -75,8 +75,8 @@ async fn explain_json(
         }));
     }
 
-    let prompt = build_prompt(&payload.word, &payload.lens);
-    let body = ollama_body(&state.model, &prompt, false, lens_token_limit(&payload.lens));
+    let prompt = build_prompt(&payload.word, lens);
+    let body = ollama_body(&state.model, &prompt, false, lens_token_limit(lens));
 
     let resp = state
         .http
@@ -125,7 +125,7 @@ async fn explain_json(
         .to_string();
 
     state.cache.insert(cache_key, explanation.clone()).await;
-    state.history.push(word, lens.clone(), &explanation);
+    state.history.push(word, lens, &explanation);
 
     Ok(JsonResponse(ExplainResponse {
         explanation,
@@ -143,12 +143,12 @@ async fn explain_stream(
     (StatusCode, JsonResponse<ErrorResponse>),
 > {
     let word = payload.word.trim().to_lowercase();
-    let lens = payload.lens.clone();
-    let cache_key = (word.clone(), lens.clone());
+    let lens = payload.lens;
+    let cache_key = (word.clone(), lens);
 
     // Cache hit: burst the full cached text as a single SSE event — no Ollama round-trip.
     if let Some(cached) = state.cache.get(&cache_key).await {
-        info!(word = %word, lens = %lens, "stream cache hit");
+        info!(word = %word, lens = ?lens, "stream cache hit");
         let events: Vec<Result<Event, axum::Error>> = vec![
             Ok(Event::default().data(cached)),
             Ok(Event::default().event("done").data("")),
@@ -156,8 +156,8 @@ async fn explain_stream(
         return Ok(Sse::new(futures::stream::iter(events).boxed()).keep_alive(KeepAlive::default()));
     }
 
-    let prompt = build_prompt(&payload.word, &payload.lens);
-    let body = ollama_body(&state.model, &prompt, true, lens_token_limit(&payload.lens));
+    let prompt = build_prompt(&payload.word, lens);
+    let body = ollama_body(&state.model, &prompt, true, lens_token_limit(lens));
 
     let resp = state
         .http
@@ -217,7 +217,7 @@ async fn explain_stream(
                         evs.push(Ok(Event::default().data(chunk.response)));
                     }
                     if chunk.done {
-                        history.push(word.clone(), lens.clone(), &full_text);
+                        history.push(word.clone(), lens, &full_text);
                         let text = full_text.clone();
                         let key = cache_key.clone();
                         let cache = cache.clone();
