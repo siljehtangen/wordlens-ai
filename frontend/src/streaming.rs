@@ -65,8 +65,19 @@ pub async fn stream_explain(
 
     let body = json!({ "word": word, "lens": lens.id(), "stream": true }).to_string();
 
-    let headers = Headers::new().unwrap();
-    headers.set("Content-Type", "application/json").unwrap();
+    let headers = match Headers::new() {
+        Ok(h) => h,
+        Err(e) => {
+            push_error(content_sig, streaming_sig, "Failed to create request headers.");
+            web_sys::console::error_1(&e);
+            return;
+        }
+    };
+    if let Err(e) = headers.set("Content-Type", "application/json") {
+        push_error(content_sig, streaming_sig, "Failed to set request headers.");
+        web_sys::console::error_1(&e);
+        return;
+    }
 
     let opts = RequestInit::new();
     opts.set_method("POST");
