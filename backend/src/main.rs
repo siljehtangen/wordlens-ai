@@ -3,28 +3,35 @@ mod handlers;
 mod history;
 mod ollama;
 mod prompts;
+mod ratelimit;
 mod state;
 mod types;
 
 use std::sync::Arc;
 use tower_http::{
     compression::CompressionLayer,
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     services::{ServeDir, ServeFile},
 };
 use tracing::info;
 
 use handlers::{explain, get_history, health, shutdown_signal};
+use ratelimit::{rate_limit_middleware, RateLimiter};
 use state::AppState;
 
 const MAX_BODY_BYTES: usize = 8 * 1024;
 const CACHE_MAX_CAPACITY: u64 = 500;
+/// Global fixed-window cap: 120 requests per 60 s across all clients.
+const RATE_LIMIT_REQUESTS: u64 = 120;
+const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 
 struct Config {
     ollama_url: String,
     model: String,
     frontend_dist: String,
     bind_addr: String,
+    /// Comma-separated allowed CORS origins, or "*" to allow any.
+    cors_origins: String,
 }
 
 impl Config {
@@ -38,6 +45,8 @@ impl Config {
                 .unwrap_or_else(|_| "../frontend/dist".to_string()),
             bind_addr: std::env::var("BIND_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:3001".to_string()),
+            cors_origins: std::env::var("CORS_ORIGINS")
+                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
         }
     }
 }
@@ -55,6 +64,7 @@ async fn main() {
     let ollama_generate_url = format!("{}/api/generate", cfg.ollama_url);
 
     info!(model = %cfg.model, url = %ollama_generate_url, "Ollama config");
+    info!(origins = %cfg.cors_origins, "CORS config");
 
     let cache = moka::future::Cache::builder()
         .max_capacity(CACHE_MAX_CAPACITY)
@@ -72,10 +82,23 @@ async fn main() {
         history: Arc::new(history::History::default()),
     });
 
+    let allow_origin: AllowOrigin = if cfg.cors_origins.trim() == "*" {
+        AllowOrigin::any()
+    } else {
+        let origins = cfg
+            .cors_origins
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect::<Vec<axum::http::HeaderValue>>();
+        AllowOrigin::list(origins)
+    };
+
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(allow_origin)
         .allow_methods(Any)
         .allow_headers(Any);
+
+    let limiter = RateLimiter::new(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW);
 
     info!("serving frontend from {}", cfg.frontend_dist);
 
@@ -87,6 +110,10 @@ async fn main() {
         .route("/api/explain", axum::routing::post(explain))
         .route("/api/history", axum::routing::get(get_history))
         .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(
+            limiter,
+            rate_limit_middleware,
+        ))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(CompressionLayer::new())
         .layer(cors)
