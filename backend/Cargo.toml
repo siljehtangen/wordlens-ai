@@ -3,9 +3,17 @@ name = "wordlens-backend"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "wordlens_backend"
+path = "src/lib.rs"
+
 [[bin]]
 name = "wordlens-backend"
 path = "src/main.rs"
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
+serde_json = "1"
 
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }
