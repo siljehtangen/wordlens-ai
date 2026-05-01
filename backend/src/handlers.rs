@@ -7,12 +7,15 @@ use axum::{
 };
 use futures::StreamExt;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tokio::time::timeout;
+use tracing::{error, info, warn, Span};
 
 use crate::error::AppError;
 use crate::ollama::{build_prompt, lens_token_limit, ollama_body, validate_request, OLLAMA_TIMEOUT};
 use crate::state::AppState;
 use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, OllamaChunk};
+
+const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,7 @@ pub async fn explain(
     }
 }
 
+#[tracing::instrument(skip_all, fields(word = %payload.word.trim(), lens = ?payload.lens, cached = false))]
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -60,7 +64,8 @@ async fn explain_json(
     let cache_key = (word.clone(), lens);
 
     if let Some(cached) = state.cache.get(&cache_key).await {
-        info!(word = %word, lens = ?lens, "cache hit");
+        Span::current().record("cached", true);
+        info!("cache hit");
         return Ok(JsonResponse(ExplainResponse {
             explanation: cached,
             lens,
@@ -117,6 +122,7 @@ async fn explain_json(
     }))
 }
 
+#[tracing::instrument(skip_all, fields(word = %payload.word.trim(), lens = ?payload.lens, cached = false))]
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -127,7 +133,8 @@ async fn explain_stream(
 
     // Cache hit: burst the full cached text as a single SSE event — no Ollama round-trip.
     if let Some(cached) = state.cache.get(&cache_key).await {
-        info!(word = %word, lens = ?lens, "stream cache hit");
+        Span::current().record("cached", true);
+        info!("stream cache hit");
         let events: Vec<Result<Event, axum::Error>> = vec![
             Ok(Event::default().data(cached)),
             Ok(Event::default().event("done").data("")),
@@ -165,6 +172,7 @@ async fn explain_stream(
 
     // Each reqwest chunk may contain one or more newline-delimited JSON objects.
     // We split on newlines, parse each as OllamaChunk, and emit SSE events.
+    // STREAM_CHUNK_TIMEOUT guards against Ollama stalling mid-response.
     let event_stream = resp
         .bytes_stream()
         .flat_map(move |chunk| {
@@ -203,7 +211,20 @@ async fn explain_stream(
         })
         .boxed();
 
-    Ok(Sse::new(event_stream).keep_alive(KeepAlive::default()))
+    // Wrap each poll with a deadline so a stalled Ollama doesn't hold the connection open.
+    let guarded_stream = futures::stream::unfold(event_stream, |mut s| async move {
+        match timeout(STREAM_CHUNK_TIMEOUT, s.next()).await {
+            Ok(Some(item)) => Some((item, s)),
+            Ok(None) => None,
+            Err(_) => {
+                error!("stream chunk timeout — Ollama stalled, closing SSE");
+                None
+            }
+        }
+    })
+    .boxed();
+
+    Ok(Sse::new(guarded_stream).keep_alive(KeepAlive::default()))
 }
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
