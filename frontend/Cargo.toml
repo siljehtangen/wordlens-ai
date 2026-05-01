@@ -43,3 +43,8 @@ lucide-leptos = { version = "0.3", features = [
     "Eye", "Send", "RefreshCw", "Trash2", "Info", "X", "Sparkles",
     "BookOpen", "GraduationCap", "Gamepad2", "Cpu", "Feather",
 ] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
