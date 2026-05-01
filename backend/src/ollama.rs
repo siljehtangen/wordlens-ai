@@ -9,7 +9,7 @@ pub fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
     if word.is_empty() {
         return Err("Word cannot be empty.".to_string());
     }
-    if word.len() > MAX_WORD_LEN {
+    if word.chars().count() > MAX_WORD_LEN {
         return Err(format!("Word is too long (max {MAX_WORD_LEN} characters)."));
     }
     Ok(())
@@ -79,6 +79,15 @@ mod tests {
     #[test]
     fn word_over_limit_rejected() {
         let w = "a".repeat(MAX_WORD_LEN + 1);
+        assert!(validate_request(&req(&w, Lens::Simple)).is_err());
+    }
+
+    #[test]
+    fn multibyte_chars_count_as_one_each() {
+        // "é" is 2 bytes but 1 char — MAX_WORD_LEN é's must pass
+        let w = "é".repeat(MAX_WORD_LEN);
+        assert!(validate_request(&req(&w, Lens::Simple)).is_ok());
+        let w = "é".repeat(MAX_WORD_LEN + 1);
         assert!(validate_request(&req(&w, Lens::Simple)).is_err());
     }
 
