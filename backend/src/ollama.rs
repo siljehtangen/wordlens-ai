@@ -4,6 +4,11 @@ use crate::types::{ExplainRequest, Lens};
 pub const MAX_WORD_LEN: usize = 200;
 pub const OLLAMA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
+const NUM_CTX: u32 = 2048;
+const TEMPERATURE: f64 = 0.7;
+const TOP_P: f64 = 0.9;
+const REPEAT_PENALTY: f64 = 1.1;
+
 pub fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
     let word = payload.word.trim();
     if word.is_empty() {
@@ -44,10 +49,10 @@ pub fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) ->
         "stream": stream,
         "options": {
             "num_predict": num_predict,
-            "num_ctx": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "repeat_penalty": 1.1
+            "num_ctx": NUM_CTX,
+            "temperature": TEMPERATURE,
+            "top_p": TOP_P,
+            "repeat_penalty": REPEAT_PENALTY
         }
     })
 }
