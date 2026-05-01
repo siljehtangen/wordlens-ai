@@ -19,6 +19,28 @@ use state::AppState;
 const MAX_BODY_BYTES: usize = 8 * 1024;
 const CACHE_MAX_CAPACITY: u64 = 500;
 
+struct Config {
+    ollama_url: String,
+    model: String,
+    frontend_dist: String,
+    bind_addr: String,
+}
+
+impl Config {
+    fn from_env() -> Self {
+        Self {
+            ollama_url: std::env::var("OLLAMA_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string()),
+            model: std::env::var("OLLAMA_MODEL")
+                .unwrap_or_else(|_| "llama3".to_string()),
+            frontend_dist: std::env::var("FRONTEND_DIST")
+                .unwrap_or_else(|_| "../frontend/dist".to_string()),
+            bind_addr: std::env::var("BIND_ADDR")
+                .unwrap_or_else(|_| "0.0.0.0:3001".to_string()),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -28,12 +50,10 @@ async fn main() {
         )
         .init();
 
-    let ollama_base = std::env::var("OLLAMA_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
-    let ollama_generate_url = format!("{ollama_base}/api/generate");
+    let cfg = Config::from_env();
+    let ollama_generate_url = format!("{}/api/generate", cfg.ollama_url);
 
-    info!(%model, url = %ollama_generate_url, "Ollama config");
+    info!(model = %cfg.model, url = %ollama_generate_url, "Ollama config");
 
     let cache = moka::future::Cache::builder()
         .max_capacity(CACHE_MAX_CAPACITY)
@@ -46,7 +66,7 @@ async fn main() {
             .build()
             .expect("failed to build HTTP client"),
         ollama_generate_url,
-        model,
+        model: cfg.model,
         cache,
         history: Arc::new(history::History::default()),
     });
@@ -56,12 +76,10 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let frontend_dist = std::env::var("FRONTEND_DIST")
-        .unwrap_or_else(|_| "../frontend/dist".to_string());
-    info!("serving frontend from {frontend_dist}");
+    info!("serving frontend from {}", cfg.frontend_dist);
 
-    let serve_dir = ServeDir::new(&frontend_dist)
-        .not_found_service(ServeFile::new(format!("{frontend_dist}/index.html")));
+    let serve_dir = ServeDir::new(&cfg.frontend_dist)
+        .not_found_service(ServeFile::new(format!("{}/index.html", cfg.frontend_dist)));
 
     let app = axum::Router::new()
         .route("/health", axum::routing::get(health))
@@ -73,14 +91,12 @@ async fn main() {
         .layer(cors)
         .fallback_service(serve_dir);
 
-    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
-
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap_or_else(|e| {
-        eprintln!("ERROR: failed to bind to {addr}: {e}");
+    let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await.unwrap_or_else(|e| {
+        eprintln!("ERROR: failed to bind to {}: {e}", cfg.bind_addr);
         std::process::exit(1);
     });
 
-    info!("WordLens backend listening on http://{addr}");
+    info!("WordLens backend listening on http://{}", cfg.bind_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
