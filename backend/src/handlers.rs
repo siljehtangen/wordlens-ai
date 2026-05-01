@@ -1,6 +1,5 @@
 use axum::{
     extract::{Json, Query, State},
-    http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Json as JsonResponse,
@@ -10,11 +9,10 @@ use futures::StreamExt;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+use crate::error::AppError;
 use crate::ollama::{build_prompt, lens_token_limit, ollama_body, validate_request, OLLAMA_TIMEOUT};
 use crate::state::AppState;
-use crate::types::{
-    ErrorResponse, ExplainRequest, ExplainResponse, HistoryQuery, OllamaChunk,
-};
+use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, OllamaChunk};
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -36,11 +34,7 @@ pub async fn explain(
 ) -> impl IntoResponse {
     if let Err(e) = validate_request(&payload) {
         warn!(word = %payload.word, lens = ?payload.lens, error = %e, "invalid request");
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            JsonResponse(ErrorResponse { error: e }),
-        )
-            .into_response();
+        return AppError::InvalidRequest(e).into_response();
     }
 
     info!(
@@ -60,7 +54,7 @@ pub async fn explain(
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
-) -> Result<JsonResponse<ExplainResponse>, (StatusCode, JsonResponse<ErrorResponse>)> {
+) -> Result<JsonResponse<ExplainResponse>, AppError> {
     let word = payload.word.trim().to_lowercase();
     let lens = payload.lens;
     let cache_key = (word.clone(), lens);
@@ -87,35 +81,23 @@ async fn explain_json(
         .await
         .map_err(|e| {
             error!(error = %e, "cannot reach Ollama (json path)");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                JsonResponse(ErrorResponse {
-                    error: format!(
-                        "Cannot reach Ollama at {}. \
-                         Make sure Ollama is running with `ollama serve`. Error: {e}",
-                        state.ollama_generate_url
-                    ),
-                }),
-            )
+            AppError::OllamaUnreachable(format!(
+                "Cannot reach Ollama at {}. \
+                 Make sure Ollama is running with `ollama serve`. Error: {e}",
+                state.ollama_generate_url
+            ))
         })?;
 
     if !resp.status().is_success() {
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            JsonResponse(ErrorResponse {
-                error: format!("Ollama returned HTTP {}", resp.status()),
-            }),
-        ));
+        return Err(AppError::OllamaBadGateway(format!(
+            "Ollama returned HTTP {}",
+            resp.status()
+        )));
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| {
         error!(error = %e, "failed to parse Ollama response");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            JsonResponse(ErrorResponse {
-                error: format!("Failed to parse Ollama response: {e}"),
-            }),
-        )
+        AppError::OllamaParseError(format!("Failed to parse Ollama response: {e}"))
     })?;
 
     let explanation = json["response"]
@@ -138,10 +120,7 @@ async fn explain_json(
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
-) -> Result<
-    Sse<futures::stream::BoxStream<'static, Result<Event, axum::Error>>>,
-    (StatusCode, JsonResponse<ErrorResponse>),
-> {
+) -> Result<Sse<futures::stream::BoxStream<'static, Result<Event, axum::Error>>>, AppError> {
     let word = payload.word.trim().to_lowercase();
     let lens = payload.lens;
     let cache_key = (word.clone(), lens);
@@ -168,24 +147,16 @@ async fn explain_stream(
         .await
         .map_err(|e| {
             error!(error = %e, "cannot reach Ollama (stream path)");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                JsonResponse(ErrorResponse {
-                    error: format!("Cannot reach Ollama: {e}"),
-                }),
-            )
+            AppError::OllamaUnreachable(format!("Cannot reach Ollama: {e}"))
         })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         error!(%status, %body, "Ollama error (stream path)");
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            JsonResponse(ErrorResponse {
-                error: format!("Ollama returned HTTP {status}: {body}"),
-            }),
-        ));
+        return Err(AppError::OllamaBadGateway(format!(
+            "Ollama returned HTTP {status}: {body}"
+        )));
     }
 
     let history = Arc::clone(&state.history);
