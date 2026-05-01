@@ -1,3 +1,4 @@
+mod error;
 mod handlers;
 mod history;
 mod ollama;
