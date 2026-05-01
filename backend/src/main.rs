@@ -1,29 +1,12 @@
-mod error;
-mod handlers;
-mod history;
-mod ollama;
-mod prompts;
-mod ratelimit;
-mod state;
-mod types;
-
 use std::sync::Arc;
-use tower_http::{
-    compression::CompressionLayer,
-    cors::{AllowOrigin, Any, CorsLayer},
-    services::{ServeDir, ServeFile},
-};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::info;
 
-use handlers::{explain, get_history, health, shutdown_signal};
-use ratelimit::{rate_limit_middleware, RateLimiter};
-use state::AppState;
-
-const MAX_BODY_BYTES: usize = 8 * 1024;
-const CACHE_MAX_CAPACITY: u64 = 500;
-/// Global fixed-window cap: 120 requests per 60 s across all clients.
-const RATE_LIMIT_REQUESTS: u64 = 120;
-const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+use wordlens_backend::{
+    build_app_with_static, history::History, ratelimit::RateLimiter, state::AppState,
+    CACHE_MAX_CAPACITY, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW,
+};
+use wordlens_backend::handlers::shutdown_signal;
 
 struct Config {
     ollama_url: String,
@@ -79,7 +62,7 @@ async fn main() {
         ollama_generate_url,
         model: cfg.model,
         cache,
-        history: Arc::new(history::History::default()),
+        history: Arc::new(History::default()),
     });
 
     let allow_origin: AllowOrigin = if cfg.cors_origins.trim() == "*" {
@@ -102,27 +85,14 @@ async fn main() {
 
     info!("serving frontend from {}", cfg.frontend_dist);
 
-    let serve_dir = ServeDir::new(&cfg.frontend_dist)
-        .not_found_service(ServeFile::new(format!("{}/index.html", cfg.frontend_dist)));
+    let app = build_app_with_static(state, limiter, cors, &cfg.frontend_dist);
 
-    let app = axum::Router::new()
-        .route("/health", axum::routing::get(health))
-        .route("/api/explain", axum::routing::post(explain))
-        .route("/api/history", axum::routing::get(get_history))
-        .with_state(state)
-        .layer(axum::middleware::from_fn_with_state(
-            limiter,
-            rate_limit_middleware,
-        ))
-        .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .layer(CompressionLayer::new())
-        .layer(cors)
-        .fallback_service(serve_dir);
-
-    let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await.unwrap_or_else(|e| {
-        eprintln!("ERROR: failed to bind to {}: {e}", cfg.bind_addr);
-        std::process::exit(1);
-    });
+    let listener = tokio::net::TcpListener::bind(&cfg.bind_addr)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: failed to bind to {}: {e}", cfg.bind_addr);
+            std::process::exit(1);
+        });
 
     info!("WordLens backend listening on http://{}", cfg.bind_addr);
 
