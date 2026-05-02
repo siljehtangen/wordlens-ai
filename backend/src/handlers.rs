@@ -11,9 +11,9 @@ use tokio::time::timeout;
 use tracing::{error, info, warn, Span};
 
 use crate::error::AppError;
-use crate::ollama::{build_prompt, lens_token_limit, ollama_body, validate_request, OLLAMA_TIMEOUT};
+use crate::ollama::{build_prompt, lens_token_limit, ollama_body, validate_request, OllamaChunk, OllamaRequest, OLLAMA_TIMEOUT};
 use crate::state::AppState;
-use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, Lens, OllamaChunk};
+use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, Lens};
 
 const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
@@ -47,14 +47,12 @@ pub async fn explain(
         "explain request"
     );
 
-    let word = payload.word.trim().to_lowercase();
-    let lens = payload.lens;
-    let cache_key = (word.clone(), lens);
+    let cache_key = (payload.word.trim().to_lowercase(), payload.lens);
 
     if payload.stream {
-        Ok(explain_stream(state, payload, word, cache_key).await?.into_response())
+        Ok(explain_stream(state, payload, cache_key).await?.into_response())
     } else {
-        Ok(explain_json(state, payload, word, cache_key).await?.into_response())
+        Ok(explain_json(state, payload, cache_key).await?.into_response())
     }
 }
 
@@ -62,7 +60,6 @@ pub async fn explain(
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
-    word: String,
     cache_key: (String, Lens),
 ) -> Result<JsonResponse<ExplainResponse>, AppError> {
     let lens = payload.lens;
@@ -81,28 +78,7 @@ async fn explain_json(
     let prompt = build_prompt(&payload.word, lens);
     let body = ollama_body(&state.model, &prompt, false, lens_token_limit(lens));
 
-    let resp = state
-        .http
-        .post(&state.ollama_generate_url)
-        .json(&body)
-        .timeout(OLLAMA_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| {
-            error!(error = %e, "cannot reach Ollama (json path)");
-            AppError::OllamaUnreachable(format!(
-                "Cannot reach Ollama at {}. \
-                 Make sure Ollama is running with `ollama serve`. Error: {e}",
-                state.ollama_generate_url
-            ))
-        })?;
-
-    if !resp.status().is_success() {
-        return Err(AppError::OllamaBadGateway(format!(
-            "Ollama returned HTTP {}",
-            resp.status()
-        )));
-    }
+    let resp = send_to_ollama(&state.http, &state.ollama_generate_url, &body).await?;
 
     let chunk: OllamaChunk = resp.json().await.map_err(|e| {
         error!(error = %e, "failed to parse Ollama response");
@@ -112,8 +88,8 @@ async fn explain_json(
     let raw = chunk.response.trim().to_string();
     let explanation = if raw.is_empty() { "No response generated.".to_string() } else { raw };
 
+    state.history.push(&cache_key.0, lens, &explanation);
     state.cache.insert(cache_key, explanation.clone()).await;
-    state.history.push(&word, lens, &explanation);
 
     Ok(JsonResponse(ExplainResponse {
         explanation,
@@ -127,7 +103,6 @@ async fn explain_json(
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
-    word: String,
     cache_key: (String, Lens),
 ) -> Result<Sse<futures::stream::BoxStream<'static, Result<Event, axum::Error>>>, AppError> {
     let lens = payload.lens;
@@ -146,26 +121,7 @@ async fn explain_stream(
     let prompt = build_prompt(&payload.word, lens);
     let body = ollama_body(&state.model, &prompt, true, lens_token_limit(lens));
 
-    let resp = state
-        .http
-        .post(&state.ollama_generate_url)
-        .json(&body)
-        .timeout(OLLAMA_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| {
-            error!(error = %e, "cannot reach Ollama (stream path)");
-            AppError::OllamaUnreachable(format!("Cannot reach Ollama: {e}"))
-        })?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        error!(%status, %body, "Ollama error (stream path)");
-        return Err(AppError::OllamaBadGateway(format!(
-            "Ollama returned HTTP {status}: {body}"
-        )));
-    }
+    let resp = send_to_ollama(&state.http, &state.ollama_generate_url, &body).await?;
 
     let history = Arc::clone(&state.history);
     let cache = state.cache.clone();
@@ -202,7 +158,7 @@ async fn explain_stream(
                         evs.push(Ok(Event::default().data(chunk.response)));
                     }
                     if chunk.done {
-                        history.push(&word, lens, &full_text);
+                        history.push(&cache_key.0, lens, &full_text);
                         let text = full_text.clone();
                         let key = cache_key.clone();
                         let cache = cache.clone();
@@ -233,6 +189,39 @@ async fn explain_stream(
     .boxed();
 
     Ok(Sse::new(guarded_stream).keep_alive(KeepAlive::default()))
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+async fn send_to_ollama(
+    http: &reqwest::Client,
+    url: &str,
+    body: &OllamaRequest,
+) -> Result<reqwest::Response, AppError> {
+    let resp = http
+        .post(url)
+        .json(body)
+        .timeout(OLLAMA_TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| {
+            error!(error = %e, "cannot reach Ollama");
+            AppError::OllamaUnreachable(format!(
+                "Cannot reach Ollama at {url}. \
+                 Make sure Ollama is running with `ollama serve`. Error: {e}"
+            ))
+        })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        error!(%status, body = %text, "Ollama error response");
+        return Err(AppError::OllamaBadGateway(format!(
+            "Ollama returned HTTP {status}: {text}"
+        )));
+    }
+
+    Ok(resp)
 }
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
