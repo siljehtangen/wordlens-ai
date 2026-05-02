@@ -5,10 +5,15 @@ use axum::{
 
 use crate::types::ErrorResponse;
 
+#[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("{0}")]
     InvalidRequest(String),
+    #[error("{0}")]
     OllamaUnreachable(String),
+    #[error("{0}")]
     OllamaBadGateway(String),
+    #[error("{0}")]
     OllamaParseError(String),
 }
 
