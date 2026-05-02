@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use wordlens_backend::{
     build_app_with_static, history::History, ratelimit::RateLimiter, state::AppState,
@@ -98,7 +98,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr)
         .await
         .unwrap_or_else(|e| {
-            eprintln!("ERROR: failed to bind to {}: {e}", cfg.bind_addr);
+            error!(addr = %cfg.bind_addr, error = %e, "failed to bind — exiting");
             std::process::exit(1);
         });
 
