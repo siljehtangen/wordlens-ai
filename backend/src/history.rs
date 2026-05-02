@@ -4,8 +4,9 @@ use serde::Serialize;
 use std::collections::VecDeque;
 
 use crate::types::Lens;
-
 use crate::MAX_HISTORY_ENTRIES;
+
+const SNIPPET_LEN: usize = 120;
 
 #[derive(Clone, Serialize)]
 pub struct HistoryEntry {
@@ -24,10 +25,10 @@ impl Default for History {
 }
 
 impl History {
-    pub fn push(&self, word: String, lens: Lens, explanation: &str) {
-        let snippet = explanation.chars().take(120).collect::<String>();
+    pub fn push(&self, word: &str, lens: Lens, explanation: &str) {
+        let snippet = explanation.chars().take(SNIPPET_LEN).collect::<String>();
         let entry = HistoryEntry {
-            word,
+            word: word.to_string(),
             lens,
             snippet,
             timestamp: Utc::now().timestamp(),
@@ -52,8 +53,8 @@ mod tests {
     #[test]
     fn recent_returns_newest_first() {
         let h = History::default();
-        h.push("alpha".to_string(), Lens::Simple, "explanation alpha");
-        h.push("beta".to_string(), Lens::Simple, "explanation beta");
+        h.push("alpha", Lens::Simple, "explanation alpha");
+        h.push("beta", Lens::Simple, "explanation beta");
         let recent = h.recent(10);
         assert_eq!(recent[0].word, "beta");
         assert_eq!(recent[1].word, "alpha");
@@ -63,7 +64,7 @@ mod tests {
     fn history_caps_at_max_entries() {
         let h = History::default();
         for i in 0..=MAX_HISTORY_ENTRIES {
-            h.push(format!("word{i}"), Lens::Simple, "exp");
+            h.push(&format!("word{i}"), Lens::Simple, "exp");
         }
         assert_eq!(h.recent(100).len(), MAX_HISTORY_ENTRIES);
     }
@@ -72,16 +73,16 @@ mod tests {
     fn snippet_truncated_at_120_chars() {
         let h = History::default();
         let long = "x".repeat(200);
-        h.push("word".to_string(), Lens::Simple, &long);
+        h.push("word", Lens::Simple, &long);
         let recent = h.recent(1);
-        assert_eq!(recent[0].snippet.chars().count(), 120);
+        assert_eq!(recent[0].snippet.chars().count(), SNIPPET_LEN);
     }
 
     #[test]
     fn recent_limit_respected() {
         let h = History::default();
         for i in 0..10 {
-            h.push(format!("w{i}"), Lens::Simple, "exp");
+            h.push(&format!("w{i}"), Lens::Simple, "exp");
         }
         assert_eq!(h.recent(3).len(), 3);
     }
