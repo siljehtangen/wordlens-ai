@@ -58,3 +58,14 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lens_display_is_lowercase() {
+        assert_eq!(Lens::Simple.to_string(), "simple");
+        assert_eq!(Lens::Cyberpunk.to_string(), "cyberpunk");
+    }
+}
+
