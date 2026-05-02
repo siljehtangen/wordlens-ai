@@ -10,16 +10,21 @@ pub enum Lens {
     Poetic,
 }
 
+impl Lens {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Lens::Simple    => "simple",
+            Lens::Learning  => "learning",
+            Lens::Game      => "game",
+            Lens::Cyberpunk => "cyberpunk",
+            Lens::Poetic    => "poetic",
+        }
+    }
+}
+
 impl std::fmt::Display for Lens {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Lens::Simple => "simple",
-            Lens::Learning => "learning",
-            Lens::Game => "game",
-            Lens::Cyberpunk => "cyberpunk",
-            Lens::Poetic => "poetic",
-        };
-        f.write_str(s)
+        f.write_str(self.as_str())
     }
 }
 
