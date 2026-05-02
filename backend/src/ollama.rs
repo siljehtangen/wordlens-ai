@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::prompts;
 use crate::types::{ExplainRequest, Lens};
 
@@ -42,19 +44,36 @@ pub fn lens_token_limit(lens: Lens) -> u32 {
     }
 }
 
-pub fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) -> serde_json::Value {
-    serde_json::json!({
-        "model": model,
-        "prompt": prompt,
-        "stream": stream,
-        "options": {
-            "num_predict": num_predict,
-            "num_ctx": NUM_CTX,
-            "temperature": TEMPERATURE,
-            "top_p": TOP_P,
-            "repeat_penalty": REPEAT_PENALTY
-        }
-    })
+#[derive(Serialize)]
+struct OllamaOptions {
+    num_predict: u32,
+    num_ctx: u32,
+    temperature: f64,
+    top_p: f64,
+    repeat_penalty: f64,
+}
+
+#[derive(Serialize)]
+pub struct OllamaRequest {
+    model: String,
+    prompt: String,
+    stream: bool,
+    options: OllamaOptions,
+}
+
+pub fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) -> OllamaRequest {
+    OllamaRequest {
+        model: model.to_string(),
+        prompt: prompt.to_string(),
+        stream,
+        options: OllamaOptions {
+            num_predict,
+            num_ctx: NUM_CTX,
+            temperature: TEMPERATURE,
+            top_p: TOP_P,
+            repeat_penalty: REPEAT_PENALTY,
+        },
+    }
 }
 
 #[cfg(test)]
