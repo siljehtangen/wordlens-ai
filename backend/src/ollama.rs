@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 use crate::prompts;
@@ -62,6 +62,15 @@ pub struct OllamaRequest {
     prompt: String,
     stream: bool,
     options: OllamaOptions,
+}
+
+/// Typed shape of a single Ollama streaming/non-streaming response chunk.
+#[derive(Deserialize)]
+pub struct OllamaChunk {
+    #[serde(default)]
+    pub response: String,
+    #[serde(default)]
+    pub done: bool,
 }
 
 pub fn ollama_body(model: &str, prompt: &str, stream: bool, num_predict: u32) -> OllamaRequest {
