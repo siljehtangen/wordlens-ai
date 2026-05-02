@@ -100,16 +100,13 @@ async fn explain_json(
         )));
     }
 
-    let json: serde_json::Value = resp.json().await.map_err(|e| {
+    let chunk: OllamaChunk = resp.json().await.map_err(|e| {
         error!(error = %e, "failed to parse Ollama response");
         AppError::OllamaParseError(format!("Failed to parse Ollama response: {e}"))
     })?;
 
-    let explanation = json["response"]
-        .as_str()
-        .unwrap_or("No response generated.")
-        .trim()
-        .to_string();
+    let raw = chunk.response.trim().to_string();
+    let explanation = if raw.is_empty() { "No response generated.".to_string() } else { raw };
 
     state.cache.insert(cache_key, explanation.clone()).await;
     state.history.push(word, lens, &explanation);
@@ -180,7 +177,9 @@ async fn explain_stream(
                 Ok(b) => b,
                 Err(e) => {
                     error!(error = %e, "error reading Ollama stream chunk");
-                    return futures::stream::iter(vec![]);
+                    return futures::stream::iter(vec![
+                        Ok(Event::default().event("error").data(format!("Stream read error: {e}"))),
+                    ]);
                 }
             };
 
