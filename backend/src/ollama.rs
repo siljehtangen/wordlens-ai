@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::error::AppError;
 use crate::prompts;
 use crate::types::{ExplainRequest, Lens};
 
@@ -11,13 +12,15 @@ const TEMPERATURE: f64 = 0.7;
 const TOP_P: f64 = 0.9;
 const REPEAT_PENALTY: f64 = 1.1;
 
-pub fn validate_request(payload: &ExplainRequest) -> Result<(), String> {
+pub fn validate_request(payload: &ExplainRequest) -> Result<(), AppError> {
     let word = payload.word.trim();
     if word.is_empty() {
-        return Err("Word cannot be empty.".to_string());
+        return Err(AppError::InvalidRequest("Word cannot be empty.".to_string()));
     }
     if word.chars().count() > MAX_WORD_LEN {
-        return Err(format!("Word is too long (max {MAX_WORD_LEN} characters)."));
+        return Err(AppError::InvalidRequest(format!(
+            "Word is too long (max {MAX_WORD_LEN} characters)."
+        )));
     }
     Ok(())
 }
