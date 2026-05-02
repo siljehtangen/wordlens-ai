@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use crate::types::Lens;
 
-const MAX_ENTRIES: usize = 50;
+use crate::MAX_HISTORY_ENTRIES;
 
 #[derive(Clone, Serialize)]
 pub struct HistoryEntry {
@@ -19,7 +19,7 @@ pub struct History(RwLock<VecDeque<HistoryEntry>>);
 
 impl Default for History {
     fn default() -> Self {
-        Self(RwLock::new(VecDeque::with_capacity(MAX_ENTRIES)))
+        Self(RwLock::new(VecDeque::with_capacity(MAX_HISTORY_ENTRIES)))
     }
 }
 
@@ -33,7 +33,7 @@ impl History {
             timestamp: Utc::now().timestamp(),
         };
         let mut q = self.0.write();
-        if q.len() == MAX_ENTRIES {
+        if q.len() == MAX_HISTORY_ENTRIES {
             q.pop_front();
         }
         q.push_back(entry);
@@ -62,10 +62,10 @@ mod tests {
     #[test]
     fn history_caps_at_max_entries() {
         let h = History::default();
-        for i in 0..=MAX_ENTRIES {
+        for i in 0..=MAX_HISTORY_ENTRIES {
             h.push(format!("word{i}"), Lens::Simple, "exp");
         }
-        assert_eq!(h.recent(100).len(), MAX_ENTRIES);
+        assert_eq!(h.recent(100).len(), MAX_HISTORY_ENTRIES);
     }
 
     #[test]
