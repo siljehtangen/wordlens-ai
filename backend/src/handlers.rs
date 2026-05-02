@@ -85,8 +85,10 @@ async fn explain_json(
         AppError::OllamaParseError(format!("Failed to parse Ollama response: {e}"))
     })?;
 
-    let raw = chunk.response.trim().to_string();
-    let explanation = if raw.is_empty() { "No response generated.".to_string() } else { raw };
+    let explanation = match chunk.response.trim() {
+        ""  => "No response generated.".to_string(),
+        s   => s.to_string(),
+    };
 
     state.history.push(&cache_key.0, lens, &explanation);
     state.cache.insert(cache_key, explanation.clone()).await;
@@ -111,7 +113,7 @@ async fn explain_stream(
     if let Some(cached) = state.cache.get(&cache_key).await {
         Span::current().record("cached", true);
         info!("stream cache hit");
-        let events: Vec<Result<Event, axum::Error>> = vec![
+        let events = [
             Ok(Event::default().data(cached)),
             Ok(Event::default().event("done").data("")),
         ];
