@@ -113,7 +113,7 @@ async fn explain_json(
     let explanation = if raw.is_empty() { "No response generated.".to_string() } else { raw };
 
     state.cache.insert(cache_key, explanation.clone()).await;
-    state.history.push(word, lens, &explanation);
+    state.history.push(&word, lens, &explanation);
 
     Ok(JsonResponse(ExplainResponse {
         explanation,
@@ -202,7 +202,7 @@ async fn explain_stream(
                         evs.push(Ok(Event::default().data(chunk.response)));
                     }
                     if chunk.done {
-                        history.push(word.clone(), lens, &full_text);
+                        history.push(&word, lens, &full_text);
                         let text = full_text.clone();
                         let key = cache_key.clone();
                         let cache = cache.clone();
@@ -218,13 +218,15 @@ async fn explain_stream(
         .boxed();
 
     // Wrap each poll with a deadline so a stalled Ollama doesn't hold the connection open.
-    let guarded_stream = futures::stream::unfold(event_stream, |mut s| async move {
+    // State is Option<stream>: None signals the stream is done after an error event.
+    let guarded_stream = futures::stream::unfold(Some(event_stream), |state| async move {
+        let mut s = state?;
         match timeout(STREAM_CHUNK_TIMEOUT, s.next()).await {
-            Ok(Some(item)) => Some((item, s)),
+            Ok(Some(item)) => Some((item, Some(s))),
             Ok(None) => None,
             Err(_) => {
                 error!("stream chunk timeout — Ollama stalled, closing SSE");
-                None
+                Some((Ok(Event::default().event("error").data("Stream timed out")), None))
             }
         }
     })
