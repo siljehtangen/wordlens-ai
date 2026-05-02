@@ -33,8 +33,7 @@ impl RateLimiter {
         let now = std::time::Instant::now();
         if now >= g.window_end {
             g.window_end = now + g.window;
-            g.count = 1;
-            return Ok(());
+            g.count = 0;
         }
         g.count += 1;
         if g.count <= g.limit {
