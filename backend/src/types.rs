@@ -34,7 +34,7 @@ pub struct HistoryQuery {
     pub limit: usize,
 }
 fn default_limit() -> usize {
-    20
+    crate::DEFAULT_HISTORY_LIMIT
 }
 
 #[derive(Debug, Deserialize)]
