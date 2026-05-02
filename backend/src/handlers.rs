@@ -27,7 +27,7 @@ pub async fn get_history(
     State(state): State<Arc<AppState>>,
     Query(q): Query<HistoryQuery>,
 ) -> impl IntoResponse {
-    let limit = q.limit.min(50);
+    let limit = q.limit.min(crate::MAX_HISTORY_ENTRIES);
     JsonResponse(state.history.recent(limit))
 }
 
@@ -187,8 +187,11 @@ async fn explain_stream(
                 }
             };
 
-            let events: Vec<Result<Event, axum::Error>> = std::str::from_utf8(&bytes)
-                .unwrap_or("")
+            let text = std::str::from_utf8(&bytes).unwrap_or_else(|e| {
+                warn!(error = %e, "invalid UTF-8 in Ollama stream chunk — skipping");
+                ""
+            });
+            let events: Vec<Result<Event, axum::Error>> = text
                 .lines()
                 .filter(|l| !l.trim().is_empty())
                 .filter_map(|line| serde_json::from_str::<OllamaChunk>(line).ok())
