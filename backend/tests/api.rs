@@ -8,12 +8,12 @@ fn app() -> axum::Router {
     build_app(test_state(), RateLimiter::new(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW), CorsLayer::permissive())
 }
 
-fn json_post(uri: &str, body: &'static str) -> Request<Body> {
+fn json_post(uri: &str, body: impl Into<Body>) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri(uri)
         .header("content-type", "application/json")
-        .body(Body::from(body))
+        .body(body.into())
         .unwrap()
 }
 
@@ -67,14 +67,7 @@ async fn word_too_long_returns_422() {
     let word = "a".repeat(201);
     let body = format!(r#"{{"word":"{word}","lens":"simple","stream":false}}"#);
     let resp = app()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/explain")
-                .header("content-type", "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
+        .oneshot(json_post("/api/explain", body))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -136,5 +129,15 @@ async fn rate_limit_triggers_429() {
 
     assert_eq!(tight.clone().oneshot(req()).await.unwrap().status(), StatusCode::OK);
     assert_eq!(tight.clone().oneshot(req()).await.unwrap().status(), StatusCode::OK);
-    assert_eq!(tight.oneshot(req()).await.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
+    let resp = tight.oneshot(req()).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    let retry_after = resp
+        .headers()
+        .get("retry-after")
+        .expect("Retry-After header missing")
+        .to_str()
+        .unwrap()
+        .parse::<u64>()
+        .expect("Retry-After is not a valid number");
+    assert!(retry_after > 0);
 }
