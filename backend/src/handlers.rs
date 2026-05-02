@@ -2,7 +2,7 @@ use axum::{
     extract::{Json, Query, State},
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse, Json as JsonResponse,
+        IntoResponse, Json as JsonResponse, Response,
     },
 };
 use futures::StreamExt;
@@ -13,7 +13,7 @@ use tracing::{error, info, warn, Span};
 use crate::error::AppError;
 use crate::ollama::{build_prompt, lens_token_limit, ollama_body, validate_request, OLLAMA_TIMEOUT};
 use crate::state::AppState;
-use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, OllamaChunk};
+use crate::types::{ExplainRequest, ExplainResponse, HistoryQuery, Lens, OllamaChunk};
 
 const STREAM_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
@@ -34,11 +34,11 @@ pub async fn get_history(
 pub async fn explain(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ExplainRequest>,
-) -> impl IntoResponse {
-    if let Err(e) = validate_request(&payload) {
+) -> Result<Response, AppError> {
+    validate_request(&payload).map_err(|e| {
         warn!(word = %payload.word, lens = ?payload.lens, error = %e, "invalid request");
-        return AppError::InvalidRequest(e).into_response();
-    }
+        e
+    })?;
 
     info!(
         word = %payload.word.trim(),
@@ -47,10 +47,14 @@ pub async fn explain(
         "explain request"
     );
 
+    let word = payload.word.trim().to_lowercase();
+    let lens = payload.lens;
+    let cache_key = (word.clone(), lens);
+
     if payload.stream {
-        explain_stream(state, payload).await.into_response()
+        Ok(explain_stream(state, payload, word, cache_key).await?.into_response())
     } else {
-        explain_json(state, payload).await.into_response()
+        Ok(explain_json(state, payload, word, cache_key).await?.into_response())
     }
 }
 
@@ -58,10 +62,10 @@ pub async fn explain(
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
+    word: String,
+    cache_key: (String, Lens),
 ) -> Result<JsonResponse<ExplainResponse>, AppError> {
-    let word = payload.word.trim().to_lowercase();
     let lens = payload.lens;
-    let cache_key = (word.clone(), lens);
 
     if let Some(cached) = state.cache.get(&cache_key).await {
         Span::current().record("cached", true);
@@ -123,10 +127,10 @@ async fn explain_json(
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
+    word: String,
+    cache_key: (String, Lens),
 ) -> Result<Sse<futures::stream::BoxStream<'static, Result<Event, axum::Error>>>, AppError> {
-    let word = payload.word.trim().to_lowercase();
     let lens = payload.lens;
-    let cache_key = (word.clone(), lens);
 
     // Cache hit: burst the full cached text as a single SSE event — no Ollama round-trip.
     if let Some(cached) = state.cache.get(&cache_key).await {
