@@ -24,6 +24,7 @@ pub const MAX_BODY_BYTES: usize = 8 * 1024;
 pub const CACHE_MAX_CAPACITY: u64 = 500;
 pub const RATE_LIMIT_REQUESTS: u64 = 120;
 pub const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+pub const DEFAULT_HISTORY_LIMIT: usize = 20;
 
 pub fn build_app(state: Arc<AppState>, limiter: RateLimiter, cors: CorsLayer) -> Router {
     Router::new()
