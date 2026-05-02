@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -28,16 +28,20 @@ impl RateLimiter {
         })))
     }
 
-    fn is_allowed(&self) -> bool {
+    fn check(&self) -> Result<(), u64> {
         let mut g = self.0.lock();
         let now = std::time::Instant::now();
         if now >= g.window_end {
             g.window_end = now + g.window;
             g.count = 1;
-            return true;
+            return Ok(());
         }
         g.count += 1;
-        g.count <= g.limit
+        if g.count <= g.limit {
+            Ok(())
+        } else {
+            Err((g.window_end - now).as_secs().max(1))
+        }
     }
 }
 
@@ -46,9 +50,12 @@ pub async fn rate_limit_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    if limiter.is_allowed() {
-        next.run(req).await
-    } else {
-        StatusCode::TOO_MANY_REQUESTS.into_response()
+    match limiter.check() {
+        Ok(()) => next.run(req).await,
+        Err(retry_after) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after.to_string())],
+        )
+            .into_response(),
     }
 }
