@@ -58,11 +58,3 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-/// Typed shape of a single Ollama streaming chunk.
-#[derive(Deserialize)]
-pub struct OllamaChunk {
-    #[serde(default)]
-    pub response: String,
-    #[serde(default)]
-    pub done: bool,
-}
