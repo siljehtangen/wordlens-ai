@@ -3,7 +3,7 @@ use axum::{
     extract::{Request, State},
     http::{header, StatusCode},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Json as JsonResponse, Response},
 };
 use parking_lot::Mutex;
 
@@ -54,6 +54,7 @@ pub async fn rate_limit_middleware(
         Err(retry_after) => (
             StatusCode::TOO_MANY_REQUESTS,
             [(header::RETRY_AFTER, retry_after.to_string())],
+            JsonResponse(serde_json::json!({ "error": "Rate limit exceeded. Try again later." })),
         )
             .into_response(),
     }
