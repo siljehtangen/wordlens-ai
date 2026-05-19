@@ -34,7 +34,7 @@ impl History {
             timestamp: Utc::now().timestamp(),
         };
         let mut q = self.0.write();
-        if q.len() == MAX_HISTORY_ENTRIES {
+        if q.len() >= MAX_HISTORY_ENTRIES {
             q.pop_front();
         }
         q.push_back(entry);
