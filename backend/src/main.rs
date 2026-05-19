@@ -73,7 +73,13 @@ async fn main() {
         let origins = cfg
             .cors_origins
             .split(',')
-            .filter_map(|s| s.trim().parse().ok())
+            .filter_map(|s| {
+                let s = s.trim();
+                s.parse().ok().or_else(|| {
+                    warn!(origin = %s, "CORS_ORIGINS contains an unparseable origin — skipping");
+                    None
+                })
+            })
             .collect::<Vec<axum::http::HeaderValue>>();
         AllowOrigin::list(origins)
     };
