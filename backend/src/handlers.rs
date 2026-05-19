@@ -40,14 +40,11 @@ pub async fn explain(
         e
     })?;
 
-    info!(
-        word = %payload.word.trim(),
-        lens = ?payload.lens,
-        stream = payload.stream,
-        "explain request"
-    );
+    let word = payload.word.trim().to_string();
+    let cache_key = (word.to_lowercase(), payload.lens);
+    let payload = ExplainRequest { word, ..payload };
 
-    let cache_key = (payload.word.trim().to_lowercase(), payload.lens);
+    info!(word = %payload.word, lens = ?payload.lens, stream = payload.stream, "explain request");
 
     if payload.stream {
         Ok(explain_stream(state, payload, cache_key).await?.into_response())
@@ -56,7 +53,7 @@ pub async fn explain(
     }
 }
 
-#[tracing::instrument(skip_all, fields(word = %payload.word.trim(), lens = ?payload.lens, cached = false))]
+#[tracing::instrument(skip_all, fields(word = %payload.word, lens = ?payload.lens, cached = false))]
 async fn explain_json(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -90,7 +87,7 @@ async fn explain_json(
         s   => s.to_string(),
     };
 
-    state.history.push(&cache_key.0, lens, &explanation);
+    state.history.push(&payload.word, lens, &explanation);
     state.cache.insert(cache_key, explanation.clone()).await;
 
     Ok(JsonResponse(ExplainResponse {
@@ -101,7 +98,7 @@ async fn explain_json(
     }))
 }
 
-#[tracing::instrument(skip_all, fields(word = %payload.word.trim(), lens = ?payload.lens, cached = false))]
+#[tracing::instrument(skip_all, fields(word = %payload.word, lens = ?payload.lens, cached = false))]
 async fn explain_stream(
     state: Arc<AppState>,
     payload: ExplainRequest,
@@ -120,7 +117,8 @@ async fn explain_stream(
         return Ok(Sse::new(futures::stream::iter(events).boxed()).keep_alive(KeepAlive::default()));
     }
 
-    let prompt = build_prompt(&payload.word, lens);
+    let word = payload.word;
+    let prompt = build_prompt(&word, lens);
     let body = ollama_body(&state.model, &prompt, true, lens_token_limit(lens));
 
     let resp = send_to_ollama(&state.http, &state.ollama_generate_url, &body).await?;
@@ -160,7 +158,7 @@ async fn explain_stream(
                         evs.push(Ok(Event::default().data(chunk.response)));
                     }
                     if chunk.done {
-                        history.push(&cache_key.0, lens, &full_text);
+                        history.push(&word, lens, &full_text);
                         let text = full_text.clone();
                         let key = cache_key.clone();
                         let cache = cache.clone();
